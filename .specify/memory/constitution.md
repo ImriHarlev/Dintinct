@@ -1,50 +1,163 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: [TEMPLATE] → 1.0.0
+Added principles:
+  - I. Zero Tests (NON-NEGOTIABLE)
+  - II. Clean Code
+  - III. Organized Directory Structure
+  - IV. Technology Stack
+  - V. HTTP via ASP.NET Core Controllers
+  - VI. Shared Project Boundaries
+Added sections:
+  - Project Layout
+  - Governance
+Removed sections: N/A (first real version from template)
+Templates updated:
+  ✅ .specify/templates/spec-template.md — "User Scenarios & Testing" section remains but tests are opt-in per principle I
+  ✅ .specify/templates/tasks-template.md — test tasks already marked OPTIONAL; principle I supersedes
+  ✅ .specify/templates/plan-template.md — Testing field MUST reflect "None (no tests unless explicitly requested)"
+Deferred TODOs: None
+-->
+
+# Dintinct POC Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Zero Tests (NON-NEGOTIABLE — SUPERSEDES ALL OTHER GUIDANCE)
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+No tests of any kind MUST be written, scaffolded, or referenced unless the user explicitly requests
+them in the current conversation. This means:
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- No unit tests
+- No integration tests
+- No end-to-end (e2e) tests
+- No test projects, test helpers, or test fixtures
+- No xUnit, NUnit, MSTest, Playwright, or any other test framework references
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+This principle overrides every other source of guidance, including template suggestions,
+framework conventions, and AI instincts. When in doubt: **do not add tests**.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+When the user does request tests, their exact scope MUST be confirmed before implementation.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### II. Clean Code
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+All C# code MUST be readable, minimal, and purposeful:
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+- Methods MUST have a single, clear responsibility.
+- Classes MUST be cohesive — no god objects.
+- Names MUST be descriptive and intention-revealing; abbreviations are prohibited unless they are
+  universally understood domain terms (e.g., `DTO`, `API`).
+- Dead code, commented-out blocks, and speculative generality MUST NOT be committed.
+- Code comments MUST explain *why*, never *what* — the code itself explains what.
+- Magic strings and magic numbers MUST be extracted to named constants or configuration.
+- YAGNI: do not add abstractions or indirection until there is a concrete need.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### III. Organized Directory Structure
+
+The established project layout MUST be respected and kept clean:
+
+```
+src/
+├── NetworkA/
+│   ├── NetworkA.Ingestion.API/          # ASP.NET Core Web API (entry point)
+│   ├── NetworkA.Decomposition.Workflow/ # Temporal Workflow worker
+│   ├── NetworkA.Callback.Receiver/      # Temporal signal/callback handler
+│   └── Activities/
+│       ├── NetworkA.Activities.Dispatch/
+│       ├── NetworkA.Activities.JobSetup/
+│       ├── NetworkA.Activities.Manifest/
+│       └── NetworkA.Activities.HeavyProcessing/
+├── NetworkB/
+│   ├── NetworkB.ProxyListener.Service/  # Temporal worker / listener
+│   ├── NetworkB.Assembly.Workflow/      # Temporal Workflow worker
+│   └── Activities/
+│       ├── NetworkB.Activities.Reporting/
+│       ├── NetworkB.Activities.HeavyAssembly/
+│       └── NetworkB.Activities.ManifestState/
+└── Shared/
+    ├── Shared.Contracts/                # DTOs and shared interfaces
+    └── Shared.Infrastructure/           # Temporal client, MongoDB, Redis helpers
+```
+
+New projects MUST follow the naming convention `<Network>.<Role>.<Type>` and be placed under the
+correct network or `Shared` folder. No new top-level folders MUST be created without explicit
+approval.
+
+### IV. Technology Stack
+
+The project MUST use:
+
+- **Runtime**: .NET 10
+- **Language**: C# (latest language version enabled by .NET 10)
+- **Workflow orchestration**: Temporal .NET SDK (`Temporalio`)
+- **Storage**: MongoDB (connection managed via `Shared.Infrastructure`)
+- **Cache/messaging**: Redis (configuration managed via `Shared.Infrastructure`)
+- **HTTP framework**: ASP.NET Core (minimal hosting model with controller routing)
+
+No alternative ORMs, workflow engines, or infrastructure libraries MUST be introduced without
+explicit approval. NuGet package versions MUST be kept consistent across projects via
+`Directory.Packages.props` or a shared MSBuild props file when feasible.
+
+### V. HTTP via ASP.NET Core Controllers
+
+All HTTP endpoints MUST be implemented as ASP.NET Core controller actions:
+
+- Controllers MUST inherit from `ControllerBase`.
+- Minimal API (`app.Map*`) style MUST NOT be used for new endpoints.
+- Each controller MUST be focused on a single resource or bounded context.
+- Route templates MUST follow REST conventions (`/api/v1/[resource]`).
+- Input validation MUST use data annotations or `FluentValidation`; validation logic MUST NOT
+  live inside controller action bodies.
+- Controllers MUST delegate business logic to services or Temporal workflows — no business
+  logic inside controller methods.
+
+### VI. Shared Project Boundaries
+
+The two shared projects have strict, non-overlapping responsibilities:
+
+**`Shared.Contracts`** is the *language* of the system:
+
+- Contains only DTOs, enums, and interfaces that cross network or service boundaries.
+- MUST NOT reference any infrastructure library (no MongoDB drivers, no Redis, no Temporal SDK).
+- Both `NetworkA` and `NetworkB` projects MAY reference `Shared.Contracts`.
+
+**`Shared.Infrastructure`** is the *plumbing* of the system:
+
+- Contains Temporal client factory/helpers, MongoDB connection setup, and Redis configuration.
+- Shared infrastructure code goes here exactly once — it MUST NOT be duplicated in individual
+  worker projects.
+- Worker and API projects that need infrastructure MUST reference `Shared.Infrastructure`.
+- `Shared.Infrastructure` MAY reference `Shared.Contracts` but NOT the reverse.
+
+## Project Layout
+
+```
+Dintinct_Poc/
+├── src/                         # All production source code (see Principle III)
+├── .specify/                    # Speckit planning artifacts
+│   ├── memory/constitution.md   # This file
+│   └── templates/               # Command templates
+├── specs/                       # Per-feature plans, specs, tasks
+└── Dintinct_Poc.sln             # Solution file
+```
+
+No `tests/` directory MUST exist unless the user explicitly requests tests (Principle I).
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This constitution supersedes ALL other guidance, templates, framework defaults, and AI
+  conventions. When any source of guidance conflicts with this document, this document wins.
+- Principle I (Zero Tests) is absolute and MUST be re-read before any task that involves
+  scaffolding, code generation, or library setup.
+- Amendments MUST be made by re-running `/speckit.constitution` with explicit instructions.
+- `CONSTITUTION_VERSION` follows semantic versioning:
+  - MAJOR: removal or redefinition of a principle.
+  - MINOR: new principle or material expansion of guidance.
+  - PATCH: clarification, wording, or non-semantic refinement.
+- All feature plans generated by `/speckit.plan` MUST include a **Constitution Check** gate that
+  verifies compliance with Principles I–VI before any implementation task begins.
+- The **Testing** field in any plan MUST read: *"None — tests are prohibited unless explicitly
+  requested (Principle I)"*.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-03-08 | **Last Amended**: 2026-03-08
