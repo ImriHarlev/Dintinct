@@ -1,0 +1,79 @@
+## .NET Build Artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## .NET Assemblies
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.meta
+*.exp
+*.lib
+*.out
+*.mdb
+
+## NuGet
+packages/
+*.nupkg
+*.snupkg
+.nuget/
+nuget.config.local
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## NuGet Cache (global)
+~/.nuget/packages/
+
+## MSBuild / Roslyn Cache
+*.cache
+*.FileListAbsolute.txt
+*.Publish.xml
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Test Results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage*/
+
+## Publish Output
+publish/
+**/publish/
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+## OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+## Logs
+*.log
+logs/
+
+## Environment
+.env
+.env.*
+appsettings.*.local.json
+
+## Temp
+*.tmp
+*.bak
+temp/
+
+## User-specific
+launchSettings.json

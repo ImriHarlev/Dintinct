@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/NetworkA/">
+    <Project Path="src/NetworkA/NetworkA.Callback.Receiver/NetworkA.Callback.Receiver.csproj" />
+    <Project Path="src/NetworkA/NetworkA.Decomposition.Workflow/NetworkA.Decomposition.Workflow.csproj" />
+    <Project Path="src/NetworkA/NetworkA.Ingestion.API/NetworkA.Ingestion.API.csproj" />
+  </Folder>
+  <Folder Name="/src/NetworkA/Activities/">
+    <Project Path="src/NetworkA/Activities/NetworkA.Activities.Dispatch/NetworkA.Activities.Dispatch.csproj" />
+    <Project Path="src/NetworkA/Activities/NetworkA.Activities.HeavyProcessing/NetworkA.Activities.HeavyProcessing.csproj" />
+    <Project Path="src/NetworkA/Activities/NetworkA.Activities.JobSetup/NetworkA.Activities.JobSetup.csproj" />
+    <Project Path="src/NetworkA/Activities/NetworkA.Activities.Manifest/NetworkA.Activities.Manifest.csproj" />
+  </Folder>
+  <Folder Name="/src/NetworkB/">
+    <Project Path="src/NetworkB/NetworkB.Assembly.Workflow/NetworkB.Assembly.Workflow.csproj" />
+    <Project Path="src/NetworkB/NetworkB.ProxyListener.Service/NetworkB.ProxyListener.Service.csproj" />
+  </Folder>
+  <Folder Name="/src/NetworkB/Activities/">
+    <Project Path="src/NetworkB/Activities/NetworkB.Activities.HeavyAssembly/NetworkB.Activities.HeavyAssembly.csproj" />
+    <Project Path="src/NetworkB/Activities/NetworkB.Activities.ManifestState/NetworkB.Activities.ManifestState.csproj" />
+    <Project Path="src/NetworkB/Activities/NetworkB.Activities.Reporting/NetworkB.Activities.Reporting.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/Shared.Contracts/Shared.Contracts.csproj" />
+    <Project Path="src/Shared/Shared.Infrastructure/Shared.Infrastructure.csproj" />
+  </Folder>
+</Solution>
