@@ -150,6 +150,8 @@ The manifest is a hierarchical document that gives Network B the complete revers
   "originalPackageName": "reports.zip",
   "targetPath": "/network-b/output/reports",
   "totalChunks": 7,
+  "answerType": "RabbitMQ",
+  "answerLocation": null,
   "files": [
     {
       "originalRelativePath": "docs/report.pdf",
@@ -212,6 +214,8 @@ The manifest is a hierarchical document that gives Network B the complete revers
 | `OriginalPackageName` | `string` | Name of the original package/file (e.g., `"reports.zip"`, `"image.jpeg"`) |
 | `TargetPath` | `string` | Root output path in Network B where the package is reconstructed |
 | `TotalChunks` | `int` | Total chunk count across all files — used by the Assembly Workflow to know when all signals have arrived |
+| `AnswerType` | `AnswerType` | Copied from `IngestionRequestPayload.AnswerType` — tells Network B how to deliver the final status callback (`RabbitMQ` or `FileSystem`) |
+| `AnswerLocation` | `string?` | Copied from `IngestionRequestPayload.AnswerLocation` — required when `AnswerType == FileSystem`; `null` otherwise |
 | `Files` | `FileDescriptor[]` | One entry per original file in the package |
 
 #### `FileDescriptor`
@@ -329,6 +333,8 @@ The blueprint is a persisted copy of the manifest enriched with runtime tracking
 | `OriginalPackageName` | `string` | From manifest |
 | `TargetPath` | `string` | From manifest — root output path |
 | `TotalChunks` | `int` | From manifest — total expected chunk count |
+| `AnswerType` | `AnswerType` | From manifest — how to deliver the final status callback |
+| `AnswerLocation` | `string?` | From manifest — delivery path/queue; `null` when `AnswerType == RabbitMQ` |
 | `Files` | `FileDescriptor[]` | Full hierarchy from manifest — drives the reversal algorithm |
 | `ReceivedChunkNames` | `HashSet<string>` | Chunk names that have arrived (keyed by `ChunkDescriptor.Name`) |
 | `UnsupportedChunkNames` | `HashSet<string>` | Chunk names flagged as NOT_SUPPORTED |

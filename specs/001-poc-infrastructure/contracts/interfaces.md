@@ -207,6 +207,8 @@ public record DecompositionMetadata(
     string OriginalPackageName,
     string TargetPath,
     int TotalChunks,               // sum of all chunks across all files and converted files
+    AnswerType AnswerType,         // copied from IngestionRequestPayload — needed by Network B for final dispatch
+    string? AnswerLocation,        // copied from IngestionRequestPayload — null when AnswerType == RabbitMQ
     IReadOnlyList<FileDescriptor> Files
 );
 ```

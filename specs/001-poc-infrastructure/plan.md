@@ -106,6 +106,8 @@ src/
 │       │   ├── MongoDbServiceExtensions.cs
 │       │   ├── RedisServiceExtensions.cs
 │       │   └── TemporalServiceExtensions.cs
+│       ├── Repositories/
+│       │   └── MongoJobRepository.cs     ← shared by Ingestion API, Callback Receiver, Dispatch
 │       └── Options/
 │           ├── MongoDbOptions.cs
 │           ├── RedisOptions.cs
@@ -113,7 +115,11 @@ src/
 │           ├── TemporalOptions.cs
 │           ├── OutboxOptions.cs
 │           ├── RetryPolicyOptions.cs
-│           └── MockOptions.cs
+│           ├── MockOptions.cs
+│           ├── ProxyListenerOptions.cs
+│           ├── NetworkACallbackOptions.cs
+│           ├── InboxOptions.cs
+│           └── AssemblyOptions.cs
 ├── NetworkA/
 │   ├── NetworkA.Ingestion.API/
 │   │   ├── Controllers/
@@ -155,8 +161,6 @@ src/
 │       └── NetworkA.Activities.Dispatch/
 │           ├── Activities/
 │           │   └── DispatchActivities.cs
-│           ├── Repositories/
-│           │   └── MongoJobRepository.cs
 │           └── Program.cs
 └── NetworkB/
     ├── NetworkB.ProxyListener.Service/
