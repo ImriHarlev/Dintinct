@@ -1,41 +1,40 @@
+using NetworkA.Callback.Receiver.Services;
+using Serilog;
+using Serilog.Formatting.Compact;
+using Shared.Contracts.Interfaces;
+using Shared.Infrastructure.Extensions;
+using Shared.Infrastructure.Options;
+using Shared.Infrastructure.Repositories;
+using Shared.Infrastructure.Startup;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Host.UseSerilog((context, config) => config
+    .ReadFrom.Configuration(context.Configuration)
+    .Enrich.WithProperty("Service", "NetworkA.Callback.Receiver")
+    .WriteTo.Console(new RenderedCompactJsonFormatter()));
+
+builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDB"));
+builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
+
+builder.Services.AddMongoDb();
+builder.Services.AddTemporalClient();
+
+builder.Services.AddScoped<IJobRepository, MongoJobRepository>();
+builder.Services.AddScoped<ICallbackService, CallbackService>();
+
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+app.MapControllers();
+
+// Startup connectivity validation — fail fast on infrastructure errors (FR-021, SC-004)
+using (var scope = app.Services.CreateScope())
 {
-    app.MapOpenApi();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var db = scope.ServiceProvider.GetRequiredService<MongoDB.Driver.IMongoDatabase>();
+    await StartupValidator.ValidateMongoDbAsync(db, "NetworkA.Callback.Receiver", logger);
 }
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

@@ -1,7 +1,40 @@
-using NetworkA.Activities.HeavyProcessing;
+using NetworkA.Activities.HeavyProcessing.Activities;
+using Serilog;
+using Serilog.Formatting.Compact;
+using Shared.Infrastructure.Options;
+using Shared.Infrastructure.Startup;
+using Temporalio.Extensions.Hosting;
+
+Log.Logger = new LoggerConfiguration()
+    .Enrich.WithProperty("Service", "NetworkA.Activities.HeavyProcessing")
+    .WriteTo.Console(new RenderedCompactJsonFormatter())
+    .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddHostedService<Worker>();
+builder.Services.AddSerilog();
+
+builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
+builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
+builder.Services.Configure<MockOptions>(builder.Configuration.GetSection("Mock"));
+
+var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
+builder.Services.AddTemporalClient(opts =>
+{
+    opts.TargetHost = temporalOpts.TargetHost;
+    opts.Namespace = temporalOpts.Namespace;
+});
+
+builder.Services
+    .AddHostedTemporalWorker(taskQueue: "heavy-processing-tasks")
+    .AddScopedActivities<HeavyProcessingActivities>();
 
 var host = builder.Build();
+
+// Log Temporal worker registration (FR-021, SC-002)
+using (var scope = host.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    StartupValidator.LogTemporalWorkerRegistered("NetworkA.Activities.HeavyProcessing", "heavy-processing-tasks", logger);
+}
+
 host.Run();
