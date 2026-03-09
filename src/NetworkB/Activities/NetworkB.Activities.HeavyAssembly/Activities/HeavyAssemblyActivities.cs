@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
@@ -22,13 +24,13 @@ public class HeavyAssemblyActivities
         _logger.LogInformation("Assembling job {JobId} with {ChunkCount} received chunks",
             blueprint.Id, receivedChunkPaths.Count);
 
-        Directory.CreateDirectory(blueprint.TargetPath);
+        var assemblyDir = Path.Combine(blueprint.TargetPath, $"_assembly_{blueprint.Id}");
+        Directory.CreateDirectory(assemblyDir);
 
         var results = new List<FileResult>();
 
         foreach (var file in blueprint.Files)
         {
-            // Determine status based on whether the file's chunks were hard-failed or unsupported
             var allChunkNames = file.ConvertedFiles
                 .SelectMany(cf => cf.Chunks)
                 .Select(c => c.Name)
@@ -46,43 +48,94 @@ public class HeavyAssemblyActivities
                 continue;
             }
 
-            foreach (var convertedFile in file.ConvertedFiles)
+            // Use only the first ConvertedFileDescriptor to reconstruct the original file.
+            // Since conversion = extension-rename only (bytes unchanged), all converted
+            // versions carry the same payload; the first is sufficient.
+            var primaryConvertedFile = file.ConvertedFiles.FirstOrDefault();
+            if (primaryConvertedFile is null)
             {
-                // Sort chunks by Index and concatenate bytes in order
-                var sortedChunks = convertedFile.Chunks.OrderBy(c => c.Index).ToList();
-                var outputBytes = new List<byte>();
+                _logger.LogWarning("No converted files for {OriginalPath}, skipping", file.OriginalRelativePath);
+                results.Add(new FileResult(FileTransferStatus.Failed, file.OriginalRelativePath));
+                continue;
+            }
 
-                foreach (var chunk in sortedChunks)
+            var sortedChunks = primaryConvertedFile.Chunks.OrderBy(c => c.Index).ToList();
+            var outputBytes = new List<byte>();
+            var checksumFailed = false;
+
+            foreach (var chunk in sortedChunks)
+            {
+                var chunkPath = receivedChunkPaths.FirstOrDefault(p => Path.GetFileName(p) == chunk.Name);
+                if (chunkPath is null || !File.Exists(chunkPath))
                 {
-                    var chunkPath = receivedChunkPaths.FirstOrDefault(p => Path.GetFileName(p) == chunk.Name);
-                    if (chunkPath is not null && File.Exists(chunkPath))
-                    {
-                        var chunkBytes = await File.ReadAllBytesAsync(chunkPath);
-                        outputBytes.AddRange(chunkBytes);
-                    }
+                    _logger.LogWarning("Chunk file not found: {ChunkName}", chunk.Name);
+                    checksumFailed = true;
+                    break;
                 }
 
-                // Reverse the applied conversion (mock — pseudo-code for actual reversal):
-                // "DirectToProxy"  → write bytes directly to OriginalRelativePath
-                // "PNG"            → reverse PNG conversion → write to OriginalRelativePath (e.g. .jpeg)
-                // "DOCX_AND_PNG"   → merge DOCX + PNG bytes → reverse to OriginalRelativePath (e.g. .pdf)
-                // "TXT"            → reverse TXT conversion → write to OriginalRelativePath
-                var outputPath = Path.Combine(blueprint.TargetPath, file.OriginalRelativePath);
-                var outputDir = Path.GetDirectoryName(outputPath);
-                if (outputDir is not null)
-                    Directory.CreateDirectory(outputDir);
+                var chunkBytes = await File.ReadAllBytesAsync(chunkPath);
 
-                await File.WriteAllBytesAsync(outputPath, outputBytes.ToArray());
+                // Verify SHA256 checksum against the manifest
+                var actualChecksum = Convert.ToHexString(SHA256.HashData(chunkBytes)).ToLowerInvariant();
+                if (!string.Equals(actualChecksum, chunk.Checksum, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogError(
+                        "Checksum mismatch for chunk {ChunkName}: expected {Expected}, got {Actual}",
+                        chunk.Name, chunk.Checksum, actualChecksum);
+                    checksumFailed = true;
+                    break;
+                }
+
+                outputBytes.AddRange(chunkBytes);
             }
+
+            if (checksumFailed)
+            {
+                results.Add(new FileResult(FileTransferStatus.Failed, file.OriginalRelativePath));
+                continue;
+            }
+
+            // Write assembled bytes to the original relative path inside the assembly dir.
+            // The extension is the original format — this is the "reversal" of the extension-rename conversion.
+            var outputPath = Path.Combine(assemblyDir, file.OriginalRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var outputDir = Path.GetDirectoryName(outputPath);
+            if (outputDir is not null)
+                Directory.CreateDirectory(outputDir);
+
+            await File.WriteAllBytesAsync(outputPath, outputBytes.ToArray());
 
             results.Add(new FileResult(FileTransferStatus.Completed, file.OriginalRelativePath));
         }
 
-        // If PackageType is an archive type (zip/rar/7z/gz), re-pack all files
-        // Pseudo-code: actual archive packing would use a library like SharpCompress
-        if (blueprint.PackageType is "zip" or "rar" or "7z" or "gz")
+        // Repack into a ZIP archive if the original package was a ZIP
+        if (blueprint.PackageType == "zip")
         {
-            _logger.LogInformation("Package type {PackageType} — re-packing would occur here (mock)", blueprint.PackageType);
+            var zipPath = Path.Combine(blueprint.TargetPath, blueprint.OriginalPackageName);
+            if (File.Exists(zipPath))
+                File.Delete(zipPath);
+
+            ZipFile.CreateFromDirectory(assemblyDir, zipPath);
+            _logger.LogInformation("Repacked ZIP archive: {ZipPath}", zipPath);
+
+            try { Directory.Delete(assemblyDir, recursive: true); } catch { /* best-effort cleanup */ }
+        }
+        else
+        {
+            // For folder packages, preserve the root directory name so the recipient gets the
+            // exact same tree (TargetPath/OriginalPackageName/...). For single-file packages,
+            // place the file directly inside TargetPath.
+            var folderRoot = blueprint.PackageType == "folder"
+                ? Path.Combine(blueprint.TargetPath, blueprint.OriginalPackageName)
+                : blueprint.TargetPath;
+
+            foreach (var assembled in Directory.EnumerateFiles(assemblyDir, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(assemblyDir, assembled);
+                var dest = Path.Combine(folderRoot, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Move(assembled, dest, overwrite: true);
+            }
+            try { Directory.Delete(assemblyDir, recursive: true); } catch { /* best-effort cleanup */ }
         }
 
         _logger.LogInformation("Assembly complete for job {JobId}: {CompletedCount} completed, {FailedCount} failed",

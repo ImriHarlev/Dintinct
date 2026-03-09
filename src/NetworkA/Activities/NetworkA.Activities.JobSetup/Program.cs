@@ -22,7 +22,6 @@ builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("Mon
 builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection("Redis"));
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<RetryPolicyOptions>(builder.Configuration.GetSection("RetryPolicy"));
-builder.Services.Configure<MockOptions>(builder.Configuration.GetSection("Mock"));
 
 builder.Services.AddMongoDb();
 builder.Services.AddRedis();

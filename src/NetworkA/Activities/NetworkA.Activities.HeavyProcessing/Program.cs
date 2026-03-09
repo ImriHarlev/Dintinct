@@ -15,7 +15,6 @@ builder.Services.AddSerilog();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
-builder.Services.Configure<MockOptions>(builder.Configuration.GetSection("Mock"));
 
 var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 builder.Services.AddTemporalClient(opts =>

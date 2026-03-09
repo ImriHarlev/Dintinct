@@ -18,9 +18,10 @@ public class FileSystemAnswerDispatcher : IAnswerDispatcher
         if (string.IsNullOrWhiteSpace(payload.AnswerLocation))
             throw new InvalidOperationException("AnswerLocation must be set for FileSystem dispatch");
 
-        var dir = Path.GetDirectoryName(payload.AnswerLocation);
-        if (dir is not null)
-            Directory.CreateDirectory(dir);
+        Directory.CreateDirectory(payload.AnswerLocation);
+
+        var fileName = $"{payload.ExternalId}.json";
+        var filePath = Path.Combine(payload.AnswerLocation, fileName);
 
         var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
         {
@@ -28,8 +29,8 @@ public class FileSystemAnswerDispatcher : IAnswerDispatcher
             WriteIndented = true
         });
 
-        await File.WriteAllTextAsync(payload.AnswerLocation, json, ct);
+        await File.WriteAllTextAsync(filePath, json, ct);
 
-        _logger.LogInformation("Status callback written to FileSystem at {AnswerLocation}", payload.AnswerLocation);
+        _logger.LogInformation("Status callback written to FileSystem at {FilePath}", filePath);
     }
 }

@@ -30,7 +30,11 @@ public class DecompositionWorkflow
         var enrichedMetadata = metadata with
         {
             AnswerType = request.AnswerType,
-            AnswerLocation = request.AnswerLocation
+            AnswerLocation = request.AnswerLocation,
+            TargetNetwork = request.TargetNetwork,
+            CallingSystemId = request.CallingSystemId,
+            CallingSystemName = request.CallingSystemName,
+            ExternalId = request.ExternalId
         };
 
         await TemporalWorkflow.ExecuteActivityAsync(

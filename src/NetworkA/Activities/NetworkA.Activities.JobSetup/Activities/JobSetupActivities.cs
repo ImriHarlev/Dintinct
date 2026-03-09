@@ -11,20 +11,17 @@ public class JobSetupActivities
 {
     private readonly IJobRepository _jobRepository;
     private readonly IProxyConfigCache _cache;
-    private readonly MockOptions _mockOptions;
     private readonly RetryPolicyOptions _retryOptions;
     private readonly ILogger<JobSetupActivities> _logger;
 
     public JobSetupActivities(
         IJobRepository jobRepository,
         IProxyConfigCache cache,
-        IOptions<MockOptions> mockOptions,
         IOptions<RetryPolicyOptions> retryOptions,
         ILogger<JobSetupActivities> logger)
     {
         _jobRepository = jobRepository;
         _cache = cache;
-        _mockOptions = mockOptions.Value;
         _retryOptions = retryOptions.Value;
         _logger = logger;
     }
@@ -38,21 +35,13 @@ public class JobSetupActivities
         var sourcePath = job?.OriginalRequest.SourcePath ?? string.Empty;
         var targetPath = job?.OriginalRequest.TargetPath ?? string.Empty;
 
-        var proxyRules = new List<ProxyConfiguration>
-        {
-            new() { Id = "1", SourceFormat = "pdf", RequiredConversion = "DOCX_AND_PNG" },
-            new() { Id = "2", SourceFormat = "jpeg", RequiredConversion = "PNG" },
-            new() { Id = "3", SourceFormat = "txt", RequiredConversion = "DirectToProxy" }
-        };
-
-        await _cache.GetAsync("pdf");
-        _logger.LogInformation("Redis and MongoDB connectivity confirmed for job {JobId}", jobId);
+        var proxyRules = await _cache.GetAllAsync();
+        _logger.LogInformation("Loaded {RuleCount} proxy rules for job {JobId}", proxyRules.Count, jobId);
 
         return new WorkflowConfiguration(
             JobId: jobId,
             SourcePath: sourcePath,
             TargetPath: targetPath,
-            MockChunkCount: _mockOptions.MockChunkCount,
             MaxRetryCount: _retryOptions.MaxRetryCount,
             ProxyRules: proxyRules);
     }

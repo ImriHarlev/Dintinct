@@ -27,15 +27,20 @@ public class DispatchActivities
     {
         _logger.LogInformation("Retrying chunk {ChunkName} for job {JobId}", chunkName, jobId);
 
-        Directory.CreateDirectory(_outboxOptions.DataOutboxPath);
-
-        // Re-write mock chunk file to Data Outbox so the Proxy picks it up again
         var chunkPath = Path.Combine(_outboxOptions.DataOutboxPath, chunkName);
-        await File.WriteAllBytesAsync(chunkPath, Array.Empty<byte>());
+
+        if (!File.Exists(chunkPath))
+        {
+            _logger.LogError("Cannot retry chunk {ChunkName}: file not found at {ChunkPath}", chunkName, chunkPath);
+            return;
+        }
+
+        // Touch the existing chunk file to re-trigger the proxy file-system watcher
+        File.SetLastWriteTimeUtc(chunkPath, DateTime.UtcNow);
 
         await _jobRepository.IncrementChunkRetryCountAsync(jobId, chunkName);
 
-        _logger.LogInformation("Chunk {ChunkName} re-queued in outbox and retry counter incremented for job {JobId}",
+        _logger.LogInformation("Chunk {ChunkName} touched in outbox and retry counter incremented for job {JobId}",
             chunkName, jobId);
     }
 

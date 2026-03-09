@@ -17,7 +17,9 @@ public class IngestionRequestValidator : AbstractValidator<IngestionRequestPaylo
         RuleFor(x => x.AnswerType).IsInEnum();
         RuleFor(x => x.AnswerLocation)
             .NotEmpty()
-            .When(x => x.AnswerType == AnswerType.FileSystem)
-            .WithMessage("'Answer Location' is required when AnswerType is FileSystem.");
+            .WithMessage("'Answer Location' is required when AnswerType is FileSystem.")
+            .Must(p => string.IsNullOrEmpty(Path.GetExtension(p)))
+            .WithMessage("'Answer Location' must be a directory path, not a file path.")
+            .When(x => x.AnswerType == AnswerType.FileSystem);
     }
 }

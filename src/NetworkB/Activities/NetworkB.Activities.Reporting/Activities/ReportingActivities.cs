@@ -44,12 +44,12 @@ public class ReportingActivities
         await _csvReportWriter.WriteAsync(reportPath, fileResults);
 
         var payload = new StatusCallbackPayload(
-            CallingSystemId: string.Empty,
-            CallingSystemName: string.Empty,
-            SourcePath: string.Empty,
+            CallingSystemId: blueprint.CallingSystemId,
+            CallingSystemName: blueprint.CallingSystemName,
+            SourcePath: blueprint.SourcePath,
             TargetPath: blueprint.TargetPath,
-            TargetNetwork: string.Empty,
-            ExternalId: blueprint.Id,
+            TargetNetwork: blueprint.TargetNetwork,
+            ExternalId: blueprint.ExternalId,
             AnswerType: blueprint.AnswerType,
             AnswerLocation: blueprint.AnswerLocation,
             JobId: Guid.NewGuid().ToString(),
