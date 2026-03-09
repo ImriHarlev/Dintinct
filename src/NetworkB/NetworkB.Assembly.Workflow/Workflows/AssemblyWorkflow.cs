@@ -24,7 +24,7 @@ public class AssemblyWorkflow
         await TemporalWorkflow.WaitConditionAsync(() => _manifestReceived);
 
         var blueprint = await TemporalWorkflow.ExecuteActivityAsync<AssemblyBlueprint>(
-            "ParseAndPersistManifestAsync",
+            "ParseAndPersistManifest",
             new object[] { _manifestFilePath },
             new ActivityOptions { TaskQueue = "manifest-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
@@ -37,7 +37,7 @@ public class AssemblyWorkflow
             assemblyTimeout);
 
         var fileResults = await TemporalWorkflow.ExecuteActivityAsync<IReadOnlyList<FileResult>>(
-            "AssembleAndValidateAsync",
+            "AssembleAndValidate",
             new object[] { blueprint, (IReadOnlyList<string>)_receivedChunkPaths },
             new ActivityOptions { TaskQueue = "heavy-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(30) });
 
@@ -60,7 +60,7 @@ public class AssemblyWorkflow
         }
 
         await TemporalWorkflow.ExecuteActivityAsync(
-            "GenerateAndDispatchReportAsync",
+            "GenerateAndDispatchReport",
             new object[] { blueprint, fileResults, finalStatus },
             new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
     }

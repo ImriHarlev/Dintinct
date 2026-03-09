@@ -18,12 +18,12 @@ public class DecompositionWorkflow
         var jobId = TemporalWorkflow.Info.WorkflowId.Replace("decomposition-", "");
 
         _config = await TemporalWorkflow.ExecuteActivityAsync<WorkflowConfiguration>(
-            "FetchConfigurationAsync",
+            "FetchConfiguration",
             new object[] { jobId },
             new ActivityOptions { TaskQueue = "setup-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
         var metadata = await TemporalWorkflow.ExecuteActivityAsync<DecompositionMetadata>(
-            "DecomposeAndSplitAsync",
+            "DecomposeAndSplit",
             new object[] { _config },
             new ActivityOptions { TaskQueue = "heavy-processing-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(30) });
 
@@ -34,7 +34,7 @@ public class DecompositionWorkflow
         };
 
         await TemporalWorkflow.ExecuteActivityAsync(
-            "WriteManifestAsync",
+            "WriteManifest",
             new object[] { enrichedMetadata },
             new ActivityOptions { TaskQueue = "manifest-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
@@ -60,14 +60,14 @@ public class DecompositionWorkflow
         if (_chunkRetryCounts[chunkName] <= _config.MaxRetryCount)
         {
             await TemporalWorkflow.ExecuteActivityAsync(
-                "RetryChunkAsync",
+                "RetryChunk",
                 new object[] { jobId, chunkName },
                 new ActivityOptions { TaskQueue = "retry-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
         }
         else
         {
             await TemporalWorkflow.ExecuteActivityAsync(
-                "WriteHardFailAsync",
+                "WriteHardFail",
                 new object[] { jobId, chunkName },
                 new ActivityOptions { TaskQueue = "retry-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
         }

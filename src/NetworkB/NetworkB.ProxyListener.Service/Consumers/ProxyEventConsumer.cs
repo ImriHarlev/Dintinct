@@ -115,7 +115,7 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                     new object[] { _assemblyOptions.TimeoutMinutes },
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
-                        StartSignal = "UnsupportedFileAsync",
+                        StartSignal = "UnsupportedFile",
                         StartSignalArgs = new object[] { signal }
                     });
             }
@@ -128,7 +128,7 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                     new object[] { _assemblyOptions.TimeoutMinutes },
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
-                        StartSignal = "ManifestArrivedAsync",
+                        StartSignal = "ManifestArrived",
                         StartSignalArgs = new object[] { signal }
                     });
             }
@@ -142,7 +142,7 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                     new object[] { _assemblyOptions.TimeoutMinutes },
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
-                        StartSignal = "HardFailAsync",
+                        StartSignal = "HardFail",
                         StartSignalArgs = new object[] { signal }
                     });
             }
@@ -156,7 +156,7 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                     new object[] { _assemblyOptions.TimeoutMinutes },
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
-                        StartSignal = "ChunkArrivedAsync",
+                        StartSignal = "ChunkArrived",
                         StartSignalArgs = new object[] { signal }
                     });
             }

@@ -7,7 +7,7 @@ using Temporalio.Extensions.Hosting;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkA.Decomposition.Workflow")
-    .WriteTo.Console(new RenderedCompactJsonFormatter())
+    .WriteTo.Console()
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

@@ -30,7 +30,7 @@ public class CallbackService : ICallbackService
         }
 
         var handle = _temporalClient.GetWorkflowHandle(job.TemporalWorkflowId);
-        await handle.SignalAsync("FinalStatusReceivedAsync", new object[] { payload });
+        await handle.SignalAsync("FinalStatusReceived", new object[] { payload });
 
         _logger.LogInformation("Signalled workflow {WorkflowId} with final status {Status}",
             job.TemporalWorkflowId, payload.JobStatus);
@@ -46,7 +46,7 @@ public class CallbackService : ICallbackService
         }
 
         var handle = _temporalClient.GetWorkflowHandle(job.TemporalWorkflowId);
-        await handle.SignalAsync("ChunkRetryRequestedAsync", new object[] { chunkName });
+        await handle.SignalAsync("ChunkRetryRequested", new object[] { chunkName });
 
         _logger.LogInformation("Signalled workflow {WorkflowId} for chunk retry: {ChunkName}",
             job.TemporalWorkflowId, chunkName);

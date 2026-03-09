@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, config) => config
     .ReadFrom.Configuration(context.Configuration)
     .Enrich.WithProperty("Service", "NetworkA.Callback.Receiver")
-    .WriteTo.Console(new RenderedCompactJsonFormatter()));
+    .WriteTo.Console());
 
 builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDB"));
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
