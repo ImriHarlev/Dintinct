@@ -6,7 +6,7 @@ using Shared.Infrastructure.Options;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkB.ProxyListener.Service")
-    .WriteTo.Console(new RenderedCompactJsonFormatter())
+    .WriteTo.Console()
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

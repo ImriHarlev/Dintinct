@@ -10,7 +10,7 @@ using Temporalio.Extensions.Hosting;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkB.Activities.ManifestState")
-    .WriteTo.Console(new RenderedCompactJsonFormatter())
+    .WriteTo.Console()
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);
