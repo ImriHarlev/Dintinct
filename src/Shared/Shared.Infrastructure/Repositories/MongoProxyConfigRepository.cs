@@ -2,7 +2,7 @@ using MongoDB.Driver;
 using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 
-namespace NetworkA.Activities.JobSetup.Repositories;
+namespace Shared.Infrastructure.Repositories;
 
 public class MongoProxyConfigRepository : IProxyConfigRepository
 {

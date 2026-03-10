@@ -78,7 +78,17 @@ public class HeavyProcessingActivities
 
             if (!proxyRulesByFormat.TryGetValue(fileExt, out var rule))
             {
-                _logger.LogWarning("No proxy rule for extension '{Ext}', skipping file {File}", fileExt, filePath);
+                _logger.LogWarning("No proxy rule for extension '{Ext}', writing unsupported marker for {File}", fileExt, filePath);
+
+                var unsupportedRelativePath = Path.GetRelativePath(workDir, filePath).Replace('\\', '/');
+                var chunkName = $"{config.JobId}_chunk_{chunkIndex}.{fileExt}.UNSUPPORTED.txt";
+                var chunkPath = Path.Combine(_outboxOptions.DataOutboxPath, chunkName);
+                var marker = System.Text.Encoding.UTF8.GetBytes($"Unsupported file type: .{fileExt}");
+                await File.WriteAllBytesAsync(chunkPath, marker);
+
+                var checksum = Convert.ToHexString(SHA256.HashData(marker)).ToLowerInvariant();
+                files.Add(new FileDescriptor(unsupportedRelativePath, fileExt, [], [new ConvertedFileDescriptor(unsupportedRelativePath, [new ChunkDescriptor(chunkName, 1, checksum)])]));
+                chunkIndex++;
                 continue;
             }
 
