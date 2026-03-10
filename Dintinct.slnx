@@ -24,4 +24,7 @@
     <Project Path="src/Shared/Shared.Contracts/Shared.Contracts.csproj" />
     <Project Path="src/Shared/Shared.Infrastructure/Shared.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Proxy/">
+    <Project Path="src/Proxy/Proxy.MockService/Proxy.MockService.csproj" />
+  </Folder>
 </Solution>
