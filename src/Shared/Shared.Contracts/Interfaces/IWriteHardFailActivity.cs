@@ -1,7 +1,6 @@
 namespace Shared.Contracts.Interfaces;
 
-public interface IDispatchActivities
+public interface IWriteHardFailActivity
 {
-    Task RetryChunkAsync(string jobId, string chunkName);
     Task WriteHardFailAsync(string jobId, string chunkName);
 }
