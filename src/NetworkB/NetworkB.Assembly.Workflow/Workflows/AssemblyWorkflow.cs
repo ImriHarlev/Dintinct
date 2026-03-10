@@ -1,6 +1,7 @@
 using Shared.Contracts.Enums;
 using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
+using Shared.Contracts.Payloads;
 using Shared.Contracts.Signals;
 using Temporalio.Workflows;
 using TemporalWorkflow = Temporalio.Workflows.Workflow;
@@ -27,9 +28,10 @@ public class AssemblyWorkflow
 
         if (_manifestHardFailed)
         {
+            var origJobId = TemporalWorkflow.Info.WorkflowId.Replace("assembly-", "");
             await TemporalWorkflow.ExecuteActivityAsync(
-                "GenerateAndDispatchReport",
-                new object[] { null!, Array.Empty<FileResult>(), JobStatus.Failed },
+                "NotifyManifestFailure",
+                new object[] { origJobId },
                 new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
             return;
         }
@@ -71,8 +73,18 @@ public class AssemblyWorkflow
         }
 
         await TemporalWorkflow.ExecuteActivityAsync(
-            "GenerateAndDispatchReport",
+            "WriteCsvReport",
+            new object[] { blueprint, fileResults },
+            new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+
+        var payload = await TemporalWorkflow.ExecuteActivityAsync<StatusCallbackPayload>(
+            "DispatchAnswer",
             new object[] { blueprint, fileResults, finalStatus },
+            new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+
+        await TemporalWorkflow.ExecuteActivityAsync(
+            "UpdateClientA",
+            new object[] { payload },
             new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
     }
 

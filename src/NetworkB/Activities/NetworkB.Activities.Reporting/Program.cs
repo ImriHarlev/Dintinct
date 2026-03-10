@@ -36,7 +36,9 @@ builder.Services.AddTemporalClient(opts =>
 
 builder.Services
     .AddHostedTemporalWorker(taskQueue: "callback-dispatch-tasks")
-    .AddScopedActivities<ReportingActivities>();
+    .AddScopedActivities<WriteCsvReportActivities>()
+    .AddScopedActivities<DispatchAnswerActivities>()
+    .AddScopedActivities<UpdateClientAActivities>();
 
 var host = builder.Build();
 
