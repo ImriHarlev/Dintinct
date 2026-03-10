@@ -1,11 +1,9 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NetworkB.Activities.Reporting.Services;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
-using Shared.Infrastructure.Options;
 using Temporalio.Activities;
 
 namespace NetworkB.Activities.Reporting.Activities;
@@ -15,20 +13,17 @@ public class ReportingActivities
     private readonly ICsvReportWriter _csvReportWriter;
     private readonly IAnswerDispatcherFactory _dispatcherFactory;
     private readonly INetworkAClient _networkAClient;
-    private readonly InboxOptions _inboxOptions;
     private readonly ILogger<ReportingActivities> _logger;
 
     public ReportingActivities(
         ICsvReportWriter csvReportWriter,
         IAnswerDispatcherFactory dispatcherFactory,
         INetworkAClient networkAClient,
-        IOptions<InboxOptions> inboxOptions,
         ILogger<ReportingActivities> logger)
     {
         _csvReportWriter = csvReportWriter;
         _dispatcherFactory = dispatcherFactory;
         _networkAClient = networkAClient;
-        _inboxOptions = inboxOptions.Value;
         _logger = logger;
     }
 
@@ -40,7 +35,7 @@ public class ReportingActivities
     {
         _logger.LogInformation("Generating report for job {JobId} with status {Status}", blueprint.Id, finalStatus);
 
-        var reportPath = Path.Combine(_inboxOptions.OutputPath, $"{blueprint.Id}_report.csv");
+        var reportPath = Path.Combine(blueprint.TargetPath, $"{blueprint.Id}_report.csv");
         await _csvReportWriter.WriteAsync(reportPath, fileResults);
 
         var payload = new StatusCallbackPayload(
