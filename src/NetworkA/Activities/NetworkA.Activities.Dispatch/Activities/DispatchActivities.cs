@@ -27,7 +27,8 @@ public class DispatchActivities
     {
         _logger.LogInformation("Retrying chunk {ChunkName} for job {JobId}", chunkName, jobId);
 
-        var chunkPath = Path.Combine(_outboxOptions.DataOutboxPath, chunkName);
+        var outboxPath = ResolveOutboxPath(chunkName);
+        var chunkPath = Path.Combine(outboxPath, chunkName);
 
         if (!File.Exists(chunkPath))
         {
@@ -49,13 +50,19 @@ public class DispatchActivities
     {
         _logger.LogInformation("Writing hard-fail marker for chunk {ChunkName}, job {JobId}", chunkName, jobId);
 
-        Directory.CreateDirectory(_outboxOptions.DataOutboxPath);
+        var outboxPath = ResolveOutboxPath(chunkName);
+        Directory.CreateDirectory(outboxPath);
 
         // Write a .HARDFAIL.txt file per data-model.md §3.1 naming convention
         var hardFailFileName = $"{chunkName}.HARDFAIL.txt";
-        var hardFailPath = Path.Combine(_outboxOptions.DataOutboxPath, hardFailFileName);
+        var hardFailPath = Path.Combine(outboxPath, hardFailFileName);
         await File.WriteAllTextAsync(hardFailPath, $"Hard fail for chunk {chunkName} in job {jobId}");
 
         _logger.LogInformation("Hard-fail marker written: {HardFailPath}", hardFailPath);
     }
+
+    private string ResolveOutboxPath(string chunkName) =>
+        chunkName.EndsWith("_manifest.json", StringComparison.OrdinalIgnoreCase)
+            ? _outboxOptions.ManifestOutboxPath
+            : _outboxOptions.DataOutboxPath;
 }

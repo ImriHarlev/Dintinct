@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
 using Proxy.MockService.Options;
 
@@ -9,6 +10,7 @@ public class ProxyMockWorker : BackgroundService
     private readonly FileTransferService _transferService;
     private readonly ILogger<ProxyMockWorker> _logger;
     private readonly List<FileSystemWatcher> _watchers = [];
+    private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
 
     public ProxyMockWorker(
         IOptions<ProxyMockOptions> options,
@@ -55,6 +57,7 @@ public class ProxyMockWorker : BackgroundService
         };
 
         watcher.Created += (_, e) => OnFileDetected(e.FullPath, inbox, stoppingToken);
+        watcher.Changed += (_, e) => OnFileDetected(e.FullPath, inbox, stoppingToken);
 
         _watchers.Add(watcher);
         _logger.LogInformation("Watching inbox {InboxPath} → outbox {OutboxPath} (pattern: {Pattern})",
@@ -63,13 +66,16 @@ public class ProxyMockWorker : BackgroundService
 
     private void OnFileDetected(string filePath, InboxConfig inbox, CancellationToken stoppingToken)
     {
+        if (!_inFlight.TryAdd(filePath, 0))
+            return;
+
         _ = Task.Run(async () =>
         {
-            // Brief wait to ensure the file is fully written before reading
-            await Task.Delay(200, stoppingToken);
-
             try
             {
+                // Brief wait to ensure the file is fully written before reading
+                await Task.Delay(200, stoppingToken);
+
                 _logger.LogInformation("File detected: {FilePath}", filePath);
                 await _transferService.TransferFileAsync(filePath, inbox.OutboxPath, stoppingToken);
             }
@@ -80,6 +86,10 @@ public class ProxyMockWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to transfer file {FilePath}", filePath);
+            }
+            finally
+            {
+                _inFlight.TryRemove(filePath, out _);
             }
         }, stoppingToken);
     }

@@ -34,8 +34,11 @@ public class MongoJobRepository : IJobRepository
 
     public async Task IncrementChunkRetryCountAsync(string jobId, string chunkName, CancellationToken ct = default)
     {
+        // MongoDB dot-notation treats '.' as a path separator, so dots in the chunk name
+        // (e.g. file extensions) must be replaced before building the update path.
+        var safeKey = chunkName.Replace('.', '_');
         var filter = Builders<Job>.Filter.Eq(j => j.Id, jobId);
-        var update = Builders<Job>.Update.Inc($"{nameof(Job.ChunkRetryCounters)}.{chunkName}", 1);
+        var update = Builders<Job>.Update.Inc($"{nameof(Job.ChunkRetryCounters)}.{safeKey}", 1);
         await _jobs.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
 }
