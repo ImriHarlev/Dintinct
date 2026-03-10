@@ -19,8 +19,6 @@ builder.Services.AddSerilog();
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<NetworkACallbackOptions>(builder.Configuration.GetSection("NetworkA"));
-builder.Services.Configure<InboxOptions>(builder.Configuration.GetSection("Inbox"));
-
 builder.Services.AddHttpClient("NetworkA");
 
 builder.Services.AddScoped<ICsvReportWriter, CsvReportWriter>();
