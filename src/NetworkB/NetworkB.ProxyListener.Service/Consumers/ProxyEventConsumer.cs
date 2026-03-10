@@ -99,12 +99,35 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
             if (fileName.EndsWith(".ERROR.txt", StringComparison.OrdinalIgnoreCase))
             {
                 var chunkName = fileName[..^".ERROR.txt".Length];
-                _logger.LogInformation("Proxy error for chunk {ChunkName}, sending retry to Network A", chunkName);
 
-                var httpClient = _httpClientFactory.CreateClient("NetworkA");
-                await httpClient.PostAsJsonAsync(
-                    $"{_callbackOptions.CallbackBaseUrl}/api/v1/callbacks/retry",
-                    new { origJobId = jobId, chunkName });
+                // If a HARDFAIL marker itself failed to transfer, the proxy would retry it and
+                // eventually cascade: HARDFAIL → HARDFAIL.ERROR → retry → HARDFAIL.HARDFAIL → ...
+                // Break the cycle by treating any HARDFAIL transfer failure as a direct hard-fail
+                // signal for the original chunk, without going through Network A's retry machinery.
+                if (chunkName.EndsWith(".HARDFAIL.txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    var originalChunkName = chunkName[..^".HARDFAIL.txt".Length];
+                    _logger.LogWarning(
+                        "HARDFAIL marker transfer failed for {ChunkName}, signalling hard-fail for original chunk {OriginalChunkName}",
+                        chunkName, originalChunkName);
+                    var hardFailSignal = new HardFailSignal(originalChunkName);
+                    await _temporalClient.StartWorkflowAsync(
+                        "AssemblyWorkflow",
+                        new object[] { _assemblyOptions.TimeoutMinutes },
+                        new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
+                        {
+                            StartSignal = "HardFail",
+                            StartSignalArgs = new object[] { hardFailSignal }
+                        });
+                }
+                else
+                {
+                    _logger.LogInformation("Proxy error for chunk {ChunkName}, sending retry to Network A", chunkName);
+                    var httpClient = _httpClientFactory.CreateClient("NetworkA");
+                    await httpClient.PostAsJsonAsync(
+                        $"{_callbackOptions.CallbackBaseUrl}/api/v1/callbacks/retry",
+                        new { origJobId = jobId, chunkName });
+                }
             }
             else if (fileName.EndsWith(".UNSUPPORTED.txt", StringComparison.OrdinalIgnoreCase))
             {

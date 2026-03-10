@@ -14,14 +14,25 @@ public class AssemblyWorkflow
     private readonly List<string> _hardFailedChunkNames = new();
     private readonly List<string> _unsupportedChunkNames = new();
     private bool _manifestReceived;
+    private bool _manifestHardFailed;
     private int _expectedChunks;
     private string _manifestFilePath = string.Empty;
 
     [WorkflowRun]
     public async Task RunAsync(int timeoutMinutes)
     {
-        // Wait for manifest to arrive — chunks may arrive first (Temporal buffers all signals)
-        await TemporalWorkflow.WaitConditionAsync(() => _manifestReceived);
+        // Wait for manifest to arrive — chunks may arrive first (Temporal buffers all signals).
+        // Also unblock if the manifest itself hard-failed so we don't hang forever.
+        await TemporalWorkflow.WaitConditionAsync(() => _manifestReceived || _manifestHardFailed);
+
+        if (_manifestHardFailed)
+        {
+            await TemporalWorkflow.ExecuteActivityAsync(
+                "GenerateAndDispatchReport",
+                new object[] { null!, Array.Empty<FileResult>(), JobStatus.Failed },
+                new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+            return;
+        }
 
         var blueprint = await TemporalWorkflow.ExecuteActivityAsync<AssemblyBlueprint>(
             "ParseAndPersistManifest",
@@ -91,7 +102,10 @@ public class AssemblyWorkflow
     [WorkflowSignal]
     public async Task HardFailAsync(HardFailSignal signal)
     {
-        _hardFailedChunkNames.Add(signal.ChunkName);
+        if (signal.ChunkName.EndsWith("_manifest.json", StringComparison.OrdinalIgnoreCase))
+            _manifestHardFailed = true;
+        else
+            _hardFailedChunkNames.Add(signal.ChunkName);
         await Task.CompletedTask;
     }
 }
