@@ -3,5 +3,5 @@ namespace Shared.Contracts.Models;
 public record FileDescriptor(
     string OriginalRelativePath,
     string OriginalFormat,
-    string AppliedConversion,
+    IReadOnlyList<string> AppliedConversion,
     IReadOnlyList<ConvertedFileDescriptor> ConvertedFiles);

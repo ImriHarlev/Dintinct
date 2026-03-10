@@ -83,7 +83,7 @@ public class HeavyProcessingActivities
             }
 
             // Archive-type rules mean the file should have been extracted already; skip
-            if (rule.RequiredConversion.StartsWith("Extract ", StringComparison.OrdinalIgnoreCase))
+            if (rule.RequiredConversion.Any(c => c.StartsWith("Extract ", StringComparison.OrdinalIgnoreCase)))
             {
                 _logger.LogInformation("Skipping nested archive {File}", filePath);
                 continue;
@@ -92,7 +92,13 @@ public class HeavyProcessingActivities
             var fileBytes = await File.ReadAllBytesAsync(filePath);
             var relativePath = Path.GetRelativePath(workDir, filePath).Replace('\\', '/');
 
-            var convertedPaths = BuildConvertedPaths(relativePath, rule.RequiredConversion);
+            var relDir = Path.GetDirectoryName(relativePath)?.Replace('\\', '/') ?? string.Empty;
+            var stem = Path.GetFileNameWithoutExtension(relativePath);
+            var convertedPaths = rule.RequiredConversion.Count > 0
+                ? rule.RequiredConversion
+                    .Select(ext => string.IsNullOrEmpty(relDir) ? $"{stem}.{ext}" : $"{relDir}/{stem}.{ext}")
+                    .ToList()
+                : (IReadOnlyList<string>)[relativePath];
             var convertedFileDescriptors = new List<ConvertedFileDescriptor>();
 
             foreach (var convertedRelativePath in convertedPaths)
@@ -149,20 +155,4 @@ public class HeavyProcessingActivities
             Files: files);
     }
 
-    // Returns the converted relative paths for a given source relative path and conversion type.
-    // Conversion = extension rename only (bytes are unchanged).
-    private static IReadOnlyList<string> BuildConvertedPaths(string originalRelativePath, string conversion)
-    {
-        var dir = Path.GetDirectoryName(originalRelativePath)?.Replace('\\', '/') ?? string.Empty;
-        var stem = Path.GetFileNameWithoutExtension(originalRelativePath);
-        string Combine(string ext) => string.IsNullOrEmpty(dir) ? $"{stem}.{ext}" : $"{dir}/{stem}.{ext}";
-
-        return conversion.ToUpperInvariant() switch
-        {
-            "DOCX + PNG" => [Combine("docx"), Combine("png")],
-            "PNG"        => [Combine("png")],
-            "TXT"        => [Combine("txt")],
-            _            => [originalRelativePath] // "Direct to PROXY" and unknowns: keep original path
-        };
-    }
 }
