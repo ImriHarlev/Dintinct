@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. MESSAGE BROKER (Ingestion & Triggers)
+  # ==========================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: airgap_rabbitmq
+    ports:
+      - "5672:5672"   # Standard AMQP protocol port for C# clients
+      - "15672:15672" # Web Management UI (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - airgap_net
+
+  # ==========================================
+  # 2. DATABASES & CACHING (Rules & Logic)
+  # ==========================================
+  mongodb:
+    image: mongo:latest
+    container_name: airgap_mongo
+    ports:
+      - "27017:27017" # Standard MongoDB port
+    networks:
+      - airgap_net
+
+  redis:
+    image: redis:alpine
+    container_name: airgap_redis
+    ports:
+      - "6379:6379" # Standard Redis port
+    networks:
+      - airgap_net
+
+  # ==========================================
+  # 3. TEMPORAL ORCHESTRATOR & UI
+  # ==========================================
+  temporal-db:
+    image: postgres:14-alpine
+    container_name: airgap_temporal_db
+    environment:
+      - POSTGRES_USER=temporal
+      - POSTGRES_PASSWORD=temporal
+      - POSTGRES_DB=temporal
+    ports:
+      - "5432:5432"
+    networks:
+      - airgap_net
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: airgap_temporal
+    depends_on:
+      - temporal-db
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-db
+    ports:
+      - "7233:7233"
+    networks:
+      - airgap_net
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: airgap_temporal_ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8233:8080" # Temporal Web UI (http://localhost:8233)
+    networks:
+      - airgap_net
+
+networks:
+  airgap_net:
+    driver: bridge

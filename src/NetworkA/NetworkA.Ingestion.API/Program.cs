@@ -1,41 +1,42 @@
+using FluentValidation;
+using NetworkA.Ingestion.API.Services;
+using NetworkA.Ingestion.API.Validators;
+using Serilog;
+using Shared.Contracts.Interfaces;
+using Shared.Contracts.Payloads;
+using Shared.Infrastructure.Extensions;
+using Shared.Infrastructure.Options;
+using Shared.Infrastructure.Repositories;
+using Shared.Infrastructure.Startup;
+using System.Text.Json.Serialization;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Host.UseSerilog((context, config) => config
+    .ReadFrom.Configuration(context.Configuration)
+    .Enrich.WithProperty("Service", "NetworkA.Ingestion.API")
+    .WriteTo.Console());
+
+
+builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDB"));
+builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
+builder.Services.Configure<RetryPolicyOptions>(builder.Configuration.GetSection("RetryPolicy"));
+
+builder.Services.AddMongoDb();
+builder.Services.AddTemporalClient();
+
+builder.Services.AddScoped<IJobRepository, MongoJobRepository>();
+builder.Services.AddScoped<IIngestionService, IngestionService>();
+builder.Services.AddScoped<IValidator<IngestionRequestPayload>, IngestionRequestValidator>();
+
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapControllers();
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

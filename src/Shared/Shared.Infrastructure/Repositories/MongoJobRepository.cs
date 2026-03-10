@@ -1,0 +1,41 @@
+using MongoDB.Driver;
+using Shared.Contracts.Interfaces;
+using Shared.Contracts.Models;
+
+namespace Shared.Infrastructure.Repositories;
+
+public class MongoJobRepository : IJobRepository
+{
+    private readonly IMongoCollection<Job> _jobs;
+
+    public MongoJobRepository(IMongoDatabase database)
+    {
+        _jobs = database.GetCollection<Job>("jobs");
+    }
+
+    public async Task<Job?> FindByIdAsync(string id, CancellationToken ct = default)
+    {
+        var filter = Builders<Job>.Filter.Eq(j => j.Id, id);
+        return await _jobs.Find(filter).FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<Job?> FindByExternalIdAsync(string externalId, CancellationToken ct = default)
+    {
+        var filter = Builders<Job>.Filter.Eq(j => j.ExternalId, externalId);
+        return await _jobs.Find(filter).FirstOrDefaultAsync(ct);
+    }
+
+    public async Task UpsertAsync(Job job, CancellationToken ct = default)
+    {
+        var filter = Builders<Job>.Filter.Eq(j => j.Id, job.Id);
+        var options = new ReplaceOptions { IsUpsert = true };
+        await _jobs.ReplaceOneAsync(filter, job, options, ct);
+    }
+
+    public async Task IncrementChunkRetryCountAsync(string jobId, string chunkName, CancellationToken ct = default)
+    {
+        var filter = Builders<Job>.Filter.Eq(j => j.Id, jobId);
+        var update = Builders<Job>.Update.Inc($"{nameof(Job.ChunkRetryCounters)}.{chunkName}", 1);
+        await _jobs.UpdateOneAsync(filter, update, cancellationToken: ct);
+    }
+}
