@@ -8,35 +8,21 @@ using Temporalio.Activities;
 
 namespace NetworkB.Activities.Reporting.Activities;
 
-public class ReportingActivities
+public class DispatchAnswerActivities
 {
-    private readonly ICsvReportWriter _csvReportWriter;
     private readonly IAnswerDispatcherFactory _dispatcherFactory;
-    private readonly INetworkAClient _networkAClient;
-    private readonly ILogger<ReportingActivities> _logger;
+    private readonly ILogger<DispatchAnswerActivities> _logger;
 
-    public ReportingActivities(
-        ICsvReportWriter csvReportWriter,
-        IAnswerDispatcherFactory dispatcherFactory,
-        INetworkAClient networkAClient,
-        ILogger<ReportingActivities> logger)
+    public DispatchAnswerActivities(IAnswerDispatcherFactory dispatcherFactory, ILogger<DispatchAnswerActivities> logger)
     {
-        _csvReportWriter = csvReportWriter;
         _dispatcherFactory = dispatcherFactory;
-        _networkAClient = networkAClient;
         _logger = logger;
     }
 
     [Activity]
-    public async Task GenerateAndDispatchReportAsync(
-        AssemblyBlueprint blueprint,
-        IReadOnlyList<FileResult> fileResults,
-        JobStatus finalStatus)
+    public async Task<StatusCallbackPayload> DispatchAnswerAsync(AssemblyBlueprint blueprint, IReadOnlyList<FileResult> fileResults, JobStatus finalStatus)
     {
-        _logger.LogInformation("Generating report for job {JobId} with status {Status}", blueprint.Id, finalStatus);
-
-        var reportPath = Path.Combine(blueprint.TargetPath, $"{blueprint.Id}_report.csv");
-        await _csvReportWriter.WriteAsync(reportPath, fileResults);
+        _logger.LogInformation("Dispatching answer for job {JobId} via {AnswerType}", blueprint.Id, blueprint.AnswerType);
 
         var payload = new StatusCallbackPayload(
             CallingSystemId: blueprint.CallingSystemId,
@@ -56,8 +42,8 @@ public class ReportingActivities
         var dispatcher = _dispatcherFactory.GetDispatcher(blueprint.AnswerType);
         await dispatcher.DispatchAsync(payload);
 
-        await _networkAClient.SendFinalStatusAsync(payload);
+        _logger.LogInformation("Answer dispatched for job {JobId} via {AnswerType}", blueprint.Id, blueprint.AnswerType);
 
-        _logger.LogInformation("Report dispatched for job {JobId} via {AnswerType}", blueprint.Id, blueprint.AnswerType);
+        return payload;
     }
 }
