@@ -49,6 +49,10 @@ public class AssemblyWorkflow
             () => _receivedChunkPaths.Count + _hardFailedChunkNames.Count + _unsupportedChunkNames.Count >= _expectedChunks,
             assemblyTimeout);
 
+        blueprint.ReceivedChunkNames = new HashSet<string>(_receivedChunkPaths.Select(p => Path.GetFileName(p)!));
+        blueprint.HardFailedChunkNames = new HashSet<string>(_hardFailedChunkNames);
+        blueprint.UnsupportedChunkNames = new HashSet<string>(_unsupportedChunkNames);
+
         var fileResults = await TemporalWorkflow.ExecuteActivityAsync<IReadOnlyList<FileResult>>(
             "AssembleAndValidate",
             new object[] { blueprint, (IReadOnlyList<string>)_receivedChunkPaths },
@@ -71,6 +75,13 @@ public class AssemblyWorkflow
         {
             finalStatus = JobStatus.Failed;
         }
+
+        blueprint.Status = finalStatus.ToString();
+
+        await TemporalWorkflow.ExecuteActivityAsync(
+            "UpdateBlueprintStatus",
+            new object[] { blueprint },
+            new ActivityOptions { TaskQueue = "manifest-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "WriteCsvReport",

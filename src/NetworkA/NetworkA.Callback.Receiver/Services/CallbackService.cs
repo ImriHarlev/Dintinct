@@ -29,6 +29,8 @@ public class CallbackService : ICallbackService
             return;
         }
 
+        await _jobRepository.UpdateStatusAsync(payload.OrigJobId, payload.JobStatus.ToString(), ct);
+
         var handle = _temporalClient.GetWorkflowHandle(job.TemporalWorkflowId);
         await handle.SignalAsync("FinalStatusReceived", new object[] { payload });
 
