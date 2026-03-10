@@ -32,7 +32,8 @@ builder.Services.AddTemporalClient(opts =>
 
 builder.Services
     .AddHostedTemporalWorker(taskQueue: "manifest-assembly-tasks")
-    .AddScopedActivities<ManifestStateActivities>();
+    .AddScopedActivities<ParseAndPersistManifestActivities>()
+    .AddScopedActivities<UpdateBlueprintStatusActivities>();
 
 var host = builder.Build();
 

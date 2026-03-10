@@ -41,4 +41,13 @@ public class MongoJobRepository : IJobRepository
         var update = Builders<Job>.Update.Inc($"{nameof(Job.ChunkRetryCounters)}.{safeKey}", 1);
         await _jobs.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
+
+    public async Task UpdateStatusAsync(string jobId, string status, CancellationToken ct = default)
+    {
+        var filter = Builders<Job>.Filter.Eq(j => j.Id, jobId);
+        var update = Builders<Job>.Update
+            .Set(j => j.Status, status)
+            .Set(j => j.UpdatedAt, DateTime.UtcNow);
+        await _jobs.UpdateOneAsync(filter, update, cancellationToken: ct);
+    }
 }

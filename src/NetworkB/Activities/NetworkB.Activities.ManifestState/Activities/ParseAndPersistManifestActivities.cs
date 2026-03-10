@@ -7,14 +7,14 @@ using Temporalio.Activities;
 
 namespace NetworkB.Activities.ManifestState.Activities;
 
-public class ManifestStateActivities
+public class ParseAndPersistManifestActivities
 {
     private readonly IAssemblyBlueprintRepository _repository;
-    private readonly ILogger<ManifestStateActivities> _logger;
+    private readonly ILogger<ParseAndPersistManifestActivities> _logger;
 
-    public ManifestStateActivities(
+    public ParseAndPersistManifestActivities(
         IAssemblyBlueprintRepository repository,
-        ILogger<ManifestStateActivities> logger)
+        ILogger<ParseAndPersistManifestActivities> logger)
     {
         _repository = repository;
         _logger = logger;

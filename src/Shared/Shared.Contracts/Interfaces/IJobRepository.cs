@@ -8,4 +8,5 @@ public interface IJobRepository
     Task<Job?> FindByExternalIdAsync(string externalId, CancellationToken ct = default);
     Task UpsertAsync(Job job, CancellationToken ct = default);
     Task IncrementChunkRetryCountAsync(string jobId, string chunkName, CancellationToken ct = default);
+    Task UpdateStatusAsync(string jobId, string status, CancellationToken ct = default);
 }
