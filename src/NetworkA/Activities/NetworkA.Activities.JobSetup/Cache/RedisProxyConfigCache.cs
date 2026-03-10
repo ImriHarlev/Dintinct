@@ -10,7 +10,7 @@ public class RedisProxyConfigCache : IProxyConfigCache
     private readonly IConnectionMultiplexer _redis;
     private readonly IProxyConfigRepository _repository;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
-    private const string AllConfigsKey = "v1:proxyconfig:all";
+    private const string HashKey = "proxyconfig";
 
     public RedisProxyConfigCache(IConnectionMultiplexer redis, IProxyConfigRepository repository)
     {
@@ -21,15 +21,17 @@ public class RedisProxyConfigCache : IProxyConfigCache
     public async Task<ProxyConfiguration?> GetAsync(string sourceFormat, CancellationToken ct = default)
     {
         var db = _redis.GetDatabase();
-        var key = $"v1:proxyconfig:{sourceFormat}";
-        var cached = await db.StringGetAsync(key);
+        var cached = await db.HashGetAsync(HashKey, sourceFormat);
 
         if (cached.HasValue)
-            return JsonSerializer.Deserialize<ProxyConfiguration>(cached.ToString());
+            return JsonSerializer.Deserialize<ProxyConfiguration>(((byte[]?)cached)!);
 
         var config = await _repository.FindBySourceFormatAsync(sourceFormat, ct);
         if (config is not null)
-            await db.StringSetAsync(key, JsonSerializer.Serialize(config), CacheTtl);
+        {
+            _ = db.HashSetAsync(HashKey, sourceFormat, JsonSerializer.SerializeToUtf8Bytes(config));
+            _ = db.KeyExpireAsync(HashKey, CacheTtl);
+        }
 
         return config;
     }
@@ -37,20 +39,27 @@ public class RedisProxyConfigCache : IProxyConfigCache
     public async Task<IReadOnlyList<ProxyConfiguration>> GetAllAsync(CancellationToken ct = default)
     {
         var db = _redis.GetDatabase();
-        var cached = await db.StringGetAsync(AllConfigsKey);
+        var entries = await db.HashGetAllAsync(HashKey);
 
-        if (cached.HasValue)
-            return JsonSerializer.Deserialize<List<ProxyConfiguration>>(cached.ToString())!;
+        if (entries.Length > 0)
+            return entries
+                .Select(e => JsonSerializer.Deserialize<ProxyConfiguration>(((byte[]?)e.Value)!)!)
+                .ToList();
 
         var configs = await _repository.GetAllAsync(ct);
-        await db.StringSetAsync(AllConfigsKey, JsonSerializer.Serialize(configs), CacheTtl);
+        var hashFields = configs
+            .Select(c => new HashEntry(c.SourceFormat, JsonSerializer.SerializeToUtf8Bytes(c)))
+            .ToArray();
+
+        _ = db.HashSetAsync(HashKey, hashFields)
+            .ContinueWith(_ => db.KeyExpireAsync(HashKey, CacheTtl));
+
         return configs;
     }
 
     public async Task InvalidateAsync(string sourceFormat, CancellationToken ct = default)
     {
         var db = _redis.GetDatabase();
-        await db.KeyDeleteAsync($"v1:proxyconfig:{sourceFormat}");
-        await db.KeyDeleteAsync(AllConfigsKey);
+        await db.HashDeleteAsync(HashKey, sourceFormat);
     }
 }
