@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
+using NetworkB.Activities.Reporting.Interfaces;
 using NetworkB.Activities.Reporting.Services;
 using Shared.Contracts.Enums;
-using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
 using Temporalio.Activities;

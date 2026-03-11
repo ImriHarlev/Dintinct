@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using NetworkB.Activities.ManifestState.Interfaces;
 using Shared.Contracts.Enums;
-using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 using Temporalio.Activities;
 

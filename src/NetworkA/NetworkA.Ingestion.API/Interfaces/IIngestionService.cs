@@ -1,6 +1,6 @@
 using Shared.Contracts.Payloads;
 
-namespace Shared.Contracts.Interfaces;
+namespace NetworkA.Ingestion.API.Interfaces;
 
 public interface IIngestionService
 {

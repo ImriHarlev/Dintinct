@@ -1,8 +1,8 @@
 using NetworkB.Activities.Reporting.Activities;
+using NetworkB.Activities.Reporting.Interfaces;
 using NetworkB.Activities.Reporting.Services;
 using Serilog;
 using Serilog.Formatting.Compact;
-using Shared.Contracts.Interfaces;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;

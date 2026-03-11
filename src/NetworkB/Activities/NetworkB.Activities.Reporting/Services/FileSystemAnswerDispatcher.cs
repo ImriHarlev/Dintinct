@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Shared.Contracts.Interfaces;
+using NetworkB.Activities.Reporting.Interfaces;
 using Shared.Contracts.Payloads;
 
 namespace NetworkB.Activities.Reporting.Services;

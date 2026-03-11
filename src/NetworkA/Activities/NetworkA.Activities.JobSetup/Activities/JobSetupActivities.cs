@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NetworkA.Activities.JobSetup.Interfaces;
 using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 using Shared.Infrastructure.Options;

@@ -1,4 +1,4 @@
-namespace Shared.Infrastructure.Options;
+namespace NetworkA.Activities.JobSetup.Options;
 
 public class RedisOptions
 {

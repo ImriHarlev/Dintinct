@@ -1,4 +1,5 @@
 using NetworkB.ProxyListener.Service.Consumers;
+using NetworkB.ProxyListener.Service.Options;
 using Serilog;
 using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Extensions;

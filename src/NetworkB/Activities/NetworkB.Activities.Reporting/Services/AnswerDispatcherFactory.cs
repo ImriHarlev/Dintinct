@@ -1,5 +1,5 @@
+using NetworkB.Activities.Reporting.Interfaces;
 using Shared.Contracts.Enums;
-using Shared.Contracts.Interfaces;
 
 namespace NetworkB.Activities.Reporting.Services;
 

@@ -1,3 +1,4 @@
+using NetworkA.Callback.Receiver.Interfaces;
 using NetworkA.Callback.Receiver.Services;
 using Serilog;
 using Serilog.Formatting.Compact;

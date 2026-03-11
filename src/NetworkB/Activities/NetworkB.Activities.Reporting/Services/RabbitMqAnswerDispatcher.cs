@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using NetworkB.Activities.Reporting.Interfaces;
 using RabbitMQ.Client;
-using Shared.Contracts.Interfaces;
 using Shared.Contracts.Payloads;
 using Shared.Infrastructure.Options;
 

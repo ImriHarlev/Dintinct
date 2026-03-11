@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
-using Shared.Contracts.Interfaces;
+using NetworkB.Activities.Reporting.Interfaces;
 using Shared.Contracts.Payloads;
 using Shared.Infrastructure.Options;
 

@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using Shared.Contracts.Interfaces;
+using NetworkB.Activities.Reporting.Interfaces;
 using Shared.Contracts.Models;
 using Temporalio.Activities;
 

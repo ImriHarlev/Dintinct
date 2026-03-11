@@ -1,6 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
-using Shared.Contracts.Interfaces;
+using NetworkA.Ingestion.API.Interfaces;
 using Shared.Contracts.Payloads;
 
 namespace NetworkA.Ingestion.API.Controllers;

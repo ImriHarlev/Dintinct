@@ -1,4 +1,5 @@
 using FluentValidation;
+using NetworkA.Ingestion.API.Interfaces;
 using NetworkA.Ingestion.API.Services;
 using NetworkA.Ingestion.API.Validators;
 using Serilog;

@@ -1,6 +1,6 @@
 using Shared.Contracts.Models;
 
-namespace Shared.Contracts.Interfaces;
+namespace NetworkB.Activities.ManifestState.Interfaces;
 
 public interface IAssemblyBlueprintRepository
 {

@@ -1,6 +1,6 @@
 using Shared.Contracts.Models;
 
-namespace Shared.Contracts.Interfaces;
+namespace NetworkB.Activities.Reporting.Interfaces;
 
 public interface ICsvReportWriter
 {

@@ -1,6 +1,6 @@
 using Shared.Contracts.Models;
 
-namespace Shared.Contracts.Interfaces;
+namespace NetworkA.Activities.JobSetup.Interfaces;
 
 public interface IProxyConfigRepository
 {
