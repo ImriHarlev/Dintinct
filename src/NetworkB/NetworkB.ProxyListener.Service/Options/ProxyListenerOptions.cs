@@ -1,4 +1,4 @@
-namespace Shared.Infrastructure.Options;
+namespace NetworkB.ProxyListener.Service.Options;
 
 public class ProxyListenerOptions
 {

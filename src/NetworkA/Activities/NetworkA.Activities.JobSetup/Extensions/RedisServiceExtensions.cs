@@ -1,9 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Shared.Infrastructure.Options;
+using NetworkA.Activities.JobSetup.Options;
 using StackExchange.Redis;
 
-namespace Shared.Infrastructure.Extensions;
+namespace NetworkA.Activities.JobSetup.Extensions;
 
 public static class RedisServiceExtensions
 {

@@ -1,6 +1,6 @@
 using System.Text;
+using NetworkB.Activities.Reporting.Interfaces;
 using Shared.Contracts.Enums;
-using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 
 namespace NetworkB.Activities.Reporting.Services;

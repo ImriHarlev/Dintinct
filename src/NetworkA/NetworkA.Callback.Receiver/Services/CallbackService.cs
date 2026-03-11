@@ -1,3 +1,4 @@
+using NetworkA.Callback.Receiver.Interfaces;
 using Shared.Contracts.Interfaces;
 using Shared.Contracts.Payloads;
 using Temporalio.Client;

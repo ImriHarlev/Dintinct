@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Shared.Contracts.Interfaces;
+using NetworkA.Callback.Receiver.Interfaces;
 using Shared.Contracts.Payloads;
 
 namespace NetworkA.Callback.Receiver.Controllers;

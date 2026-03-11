@@ -1,6 +1,6 @@
 using Shared.Contracts.Payloads;
 
-namespace Shared.Contracts.Interfaces;
+namespace NetworkB.Activities.Reporting.Interfaces;
 
 public interface INetworkAClient
 {

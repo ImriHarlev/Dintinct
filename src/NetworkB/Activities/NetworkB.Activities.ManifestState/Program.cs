@@ -1,8 +1,8 @@
 using NetworkB.Activities.ManifestState.Activities;
+using NetworkB.Activities.ManifestState.Interfaces;
 using NetworkB.Activities.ManifestState.Repositories;
 using Serilog;
 using Serilog.Formatting.Compact;
-using Shared.Contracts.Interfaces;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;

@@ -1,5 +1,9 @@
 using NetworkA.Activities.JobSetup.Activities;
 using NetworkA.Activities.JobSetup.Cache;
+using NetworkA.Activities.JobSetup.Extensions;
+using NetworkA.Activities.JobSetup.Interfaces;
+using NetworkA.Activities.JobSetup.Options;
+using NetworkA.Activities.JobSetup.Repositories;
 using Serilog;
 using Serilog.Formatting.Compact;
 using Shared.Contracts.Interfaces;

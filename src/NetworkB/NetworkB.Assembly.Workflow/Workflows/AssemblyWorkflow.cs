@@ -1,5 +1,4 @@
 using Shared.Contracts.Enums;
-using Shared.Contracts.Interfaces;
 using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
 using Shared.Contracts.Signals;

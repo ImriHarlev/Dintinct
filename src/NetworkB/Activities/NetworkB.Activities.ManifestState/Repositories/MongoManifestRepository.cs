@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Options;
 using MongoDB.Driver;
-using Shared.Contracts.Interfaces;
+using NetworkB.Activities.ManifestState.Interfaces;
 using Shared.Contracts.Models;
-using Shared.Infrastructure.Options;
 
 namespace NetworkB.Activities.ManifestState.Repositories;
 

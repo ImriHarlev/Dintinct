@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Shared.Contracts.Interfaces;
+using NetworkA.Activities.JobSetup.Interfaces;
 using Shared.Contracts.Models;
 using StackExchange.Redis;
 
