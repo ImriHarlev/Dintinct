@@ -9,9 +9,9 @@ $responsePath = "\network-b\responses"
 Write-Host "--- Starting End-to-End Test: Job $externalId ---" -ForegroundColor Cyan
 
 # 1. Submit Ingestion Request
-Write-Host "`n[1/4] Submitting Ingestion Request via HTTP API..." -ForegroundColor Yellow
+Write-Host "`nSubmitting Ingestion Request via HTTP API..." -ForegroundColor Yellow
 $body = @{
-    callingSystemId   = "Imri-callingSystemId"
+    callingSystemId   = "Imri-callingSystemId"  
     callingSystemName = "Imri-callingSystemName"
     externalId        = $externalId
     sourcePath        = $sourcePackage
