@@ -21,8 +21,6 @@ builder.Host.UseSerilog((context, config) => config
 
 builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDB"));
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
-builder.Services.Configure<RetryPolicyOptions>(builder.Configuration.GetSection("RetryPolicy"));
-
 builder.Services.AddMongoDb();
 builder.Services.AddTemporalClient();
 
