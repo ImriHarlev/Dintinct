@@ -34,7 +34,8 @@ builder.Services.AddTemporalClient(opts =>
 
 builder.Services
     .AddHostedTemporalWorker(taskQueue: "retry-dispatch-tasks")
-    .AddScopedActivities<DispatchActivities>();
+    .AddScopedActivities<RetryChunkActivity>()
+    .AddScopedActivities<WriteHardFailActivity>();
 
 var host = builder.Build();
 
