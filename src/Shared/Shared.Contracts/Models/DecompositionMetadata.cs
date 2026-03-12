@@ -15,4 +15,5 @@ public record DecompositionMetadata(
     int TotalChunks,
     AnswerType AnswerType,
     string? AnswerLocation,
-    IReadOnlyList<FileDescriptor> Files);
+    IReadOnlyList<FileDescriptor> Files,
+    IReadOnlyList<string> NestedArchives);

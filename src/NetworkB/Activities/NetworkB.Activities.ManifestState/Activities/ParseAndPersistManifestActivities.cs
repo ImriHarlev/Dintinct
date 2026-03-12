@@ -52,6 +52,7 @@ public class ParseAndPersistManifestActivities
             AnswerType = metadata.AnswerType,
             AnswerLocation = metadata.AnswerLocation,
             Files = metadata.Files.ToList(),
+            NestedArchives = metadata.NestedArchives.ToList(),
             ReceivedChunkNames = new HashSet<string>(),
             UnsupportedChunkNames = new HashSet<string>(),
             HardFailedChunkNames = new HashSet<string>(),
@@ -82,5 +83,6 @@ public class ParseAndPersistManifestActivities
         int TotalChunks,
         AnswerType AnswerType,
         string? AnswerLocation,
-        IReadOnlyList<FileDescriptor> Files);
+        IReadOnlyList<FileDescriptor> Files,
+        IReadOnlyList<string> NestedArchives);
 }

@@ -107,6 +107,23 @@ public class HeavyAssemblyActivities
             results.Add(new FileResult(FileTransferStatus.Completed, file.OriginalRelativePath));
         }
 
+        // Re-create nested archives (deepest first so inner archives are present before outer ones zip them)
+        foreach (var archivePath in blueprint.NestedArchives.OrderByDescending(p => p.Count(c => c == '/')))
+        {
+            var archiveDir = Path.Combine(assemblyDir, archivePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!Directory.Exists(archiveDir))
+            {
+                _logger.LogWarning("Expected nested archive directory not found: {ArchiveDir}", archiveDir);
+                continue;
+            }
+
+            var tempZip = archiveDir + ".tmp";
+            ZipFile.CreateFromDirectory(archiveDir, tempZip);
+            Directory.Delete(archiveDir, recursive: true);
+            File.Move(tempZip, archiveDir);
+            _logger.LogInformation("Rebuilt nested archive: {ArchivePath}", archivePath);
+        }
+
         // Repack into a ZIP archive if the original package was a ZIP
         if (blueprint.PackageType == "zip")
         {
