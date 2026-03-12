@@ -19,17 +19,17 @@ public class DecompositionWorkflow
 
         _config = await TemporalWorkflow.ExecuteActivityAsync<WorkflowConfiguration>(
             "FetchConfiguration",
-            new object[] { jobId },
+            [jobId],
             new ActivityOptions { TaskQueue = "setup-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
         var prepared = await TemporalWorkflow.ExecuteActivityAsync<PreparedSource>(
             "PrepareSource",
-            new object[] { _config },
+            [_config],
             new ActivityOptions { TaskQueue = "heavy-processing-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(15) });
 
         var metadata = await TemporalWorkflow.ExecuteActivityAsync<DecompositionMetadata>(
             "DecomposeAndSplit",
-            new object[] { prepared, _config },
+            [prepared, _config],
             new ActivityOptions { TaskQueue = "heavy-processing-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(30) });
 
         var enrichedMetadata = metadata with
@@ -44,7 +44,7 @@ public class DecompositionWorkflow
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "WriteManifest",
-            new object[] { enrichedMetadata },
+            [enrichedMetadata],
             new ActivityOptions { TaskQueue = "manifest-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
         await TemporalWorkflow.WaitConditionAsync(() => _callbackReceived);
@@ -70,14 +70,14 @@ public class DecompositionWorkflow
         {
             await TemporalWorkflow.ExecuteActivityAsync(
                 "RetryChunk",
-                new object[] { jobId, chunkName },
+                [jobId, chunkName],
                 new ActivityOptions { TaskQueue = "retry-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
         }
         else
         {
             await TemporalWorkflow.ExecuteActivityAsync(
                 "WriteHardFail",
-                new object[] { jobId, chunkName },
+                [jobId, chunkName],
                 new ActivityOptions { TaskQueue = "retry-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
         }
     }

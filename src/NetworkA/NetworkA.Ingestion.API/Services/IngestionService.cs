@@ -37,7 +37,7 @@ public class IngestionService : IIngestionService
 
         await _temporalClient.StartWorkflowAsync(
             "DecompositionWorkflow",
-            new object[] { request },
+            [request],
             new WorkflowOptions(workflowId, "decomposition-workflow"));
 
         return jobId;

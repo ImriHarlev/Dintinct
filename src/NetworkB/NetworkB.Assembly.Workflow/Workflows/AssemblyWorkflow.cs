@@ -30,14 +30,14 @@ public class AssemblyWorkflow
             var origJobId = TemporalWorkflow.Info.WorkflowId.Replace("assembly-", "");
             await TemporalWorkflow.ExecuteActivityAsync(
                 "NotifyManifestFailure",
-                new object[] { origJobId },
+                [origJobId],
                 new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
             return;
         }
 
         var blueprint = await TemporalWorkflow.ExecuteActivityAsync<AssemblyBlueprint>(
             "ParseAndPersistManifest",
-            new object[] { _manifestFilePath },
+            [_manifestFilePath],
             new ActivityOptions { TaskQueue = "manifest-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
         _expectedChunks = blueprint.TotalChunks;
@@ -54,7 +54,7 @@ public class AssemblyWorkflow
 
         var fileResults = await TemporalWorkflow.ExecuteActivityAsync<IReadOnlyList<FileResult>>(
             "AssembleAndValidate",
-            new object[] { blueprint, (IReadOnlyList<string>)_receivedChunkPaths },
+            [blueprint, _receivedChunkPaths],
             new ActivityOptions { TaskQueue = "heavy-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(30) });
 
         JobStatus finalStatus;
@@ -79,22 +79,22 @@ public class AssemblyWorkflow
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "UpdateBlueprintStatus",
-            new object[] { blueprint },
+            [blueprint],
             new ActivityOptions { TaskQueue = "manifest-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "WriteCsvReport",
-            new object[] { blueprint, fileResults },
+            [blueprint, fileResults],
             new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
 
         var payload = await TemporalWorkflow.ExecuteActivityAsync<StatusCallbackPayload>(
             "DispatchAnswer",
-            new object[] { blueprint, fileResults, finalStatus },
+            [blueprint, fileResults, finalStatus],
             new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "UpdateClientA",
-            new object[] { payload },
+            [payload],
             new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
     }
 

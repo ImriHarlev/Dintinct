@@ -114,11 +114,11 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                     var hardFailSignal = new HardFailSignal(originalChunkName);
                     await _temporalClient.StartWorkflowAsync(
                         "AssemblyWorkflow",
-                        new object[] { _assemblyOptions.TimeoutMinutes },
+                        [_assemblyOptions.TimeoutMinutes],
                         new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                         {
                             StartSignal = "HardFail",
-                            StartSignalArgs = new object[] { hardFailSignal }
+                            StartSignalArgs = [hardFailSignal]
                         });
                 }
                 else
@@ -136,11 +136,11 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                 var signal = new UnsupportedFileSignal(filePath);
                 await _temporalClient.StartWorkflowAsync(
                     "AssemblyWorkflow",
-                    new object[] { _assemblyOptions.TimeoutMinutes },
+                    [_assemblyOptions.TimeoutMinutes],
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
                         StartSignal = "UnsupportedFile",
-                        StartSignalArgs = new object[] { signal }
+                        StartSignalArgs = [signal]
                     });
             }
             else if (fileName.EndsWith("_manifest.json", StringComparison.OrdinalIgnoreCase))
@@ -149,11 +149,11 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                 var signal = new ManifestSignal(filePath);
                 await _temporalClient.StartWorkflowAsync(
                     "AssemblyWorkflow",
-                    new object[] { _assemblyOptions.TimeoutMinutes },
+                    [_assemblyOptions.TimeoutMinutes],
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
                         StartSignal = "ManifestArrived",
-                        StartSignalArgs = new object[] { signal }
+                        StartSignalArgs = [signal]
                     });
             }
             else if (fileName.EndsWith(".HARDFAIL.txt", StringComparison.OrdinalIgnoreCase))
@@ -163,11 +163,11 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                 var signal = new HardFailSignal(chunkName);
                 await _temporalClient.StartWorkflowAsync(
                     "AssemblyWorkflow",
-                    new object[] { _assemblyOptions.TimeoutMinutes },
+                    [_assemblyOptions.TimeoutMinutes],
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
                         StartSignal = "HardFail",
-                        StartSignalArgs = new object[] { signal }
+                        StartSignalArgs = [signal]
                     });
             }
             else
@@ -177,11 +177,11 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                 var signal = new ChunkSignal(filePath);
                 await _temporalClient.StartWorkflowAsync(
                     "AssemblyWorkflow",
-                    new object[] { _assemblyOptions.TimeoutMinutes },
+                    [_assemblyOptions.TimeoutMinutes],
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
                         StartSignal = "ChunkArrived",
-                        StartSignalArgs = new object[] { signal }
+                        StartSignalArgs = [signal]
                     });
             }
 
