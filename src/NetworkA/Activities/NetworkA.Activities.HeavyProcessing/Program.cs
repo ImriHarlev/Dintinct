@@ -26,7 +26,7 @@ builder.Services.AddTemporalClient(opts =>
 builder.Services
     .AddHostedTemporalWorker(taskQueue: "heavy-processing-tasks")
     .AddScopedActivities<PrepareSourceActivities>()
-    .AddScopedActivities<HeavyProcessingActivities>();
+    .AddScopedActivities<DecomposeAndSplitActivities>();
 
 var host = builder.Build();
 

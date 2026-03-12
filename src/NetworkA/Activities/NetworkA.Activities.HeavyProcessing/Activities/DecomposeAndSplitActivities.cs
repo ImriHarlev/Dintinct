@@ -7,14 +7,14 @@ using Temporalio.Activities;
 
 namespace NetworkA.Activities.HeavyProcessing.Activities;
 
-public class HeavyProcessingActivities
+public class DecomposeAndSplitActivities
 {
     private readonly OutboxOptions _outboxOptions;
-    private readonly ILogger<HeavyProcessingActivities> _logger;
+    private readonly ILogger<DecomposeAndSplitActivities> _logger;
 
-    public HeavyProcessingActivities(
+    public DecomposeAndSplitActivities(
         IOptions<OutboxOptions> outboxOptions,
-        ILogger<HeavyProcessingActivities> logger)
+        ILogger<DecomposeAndSplitActivities> logger)
     {
         _outboxOptions = outboxOptions.Value;
         _logger = logger;
