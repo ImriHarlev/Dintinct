@@ -22,9 +22,14 @@ public class DecompositionWorkflow
             new object[] { jobId },
             new ActivityOptions { TaskQueue = "setup-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
 
+        var prepared = await TemporalWorkflow.ExecuteActivityAsync<PreparedSource>(
+            "PrepareSource",
+            new object[] { _config },
+            new ActivityOptions { TaskQueue = "heavy-processing-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(15) });
+
         var metadata = await TemporalWorkflow.ExecuteActivityAsync<DecompositionMetadata>(
             "DecomposeAndSplit",
-            new object[] { _config },
+            new object[] { prepared, _config },
             new ActivityOptions { TaskQueue = "heavy-processing-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(30) });
 
         var enrichedMetadata = metadata with

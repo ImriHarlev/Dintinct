@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,57 +21,19 @@ public class HeavyProcessingActivities
     }
 
     [Activity]
-    public async Task<DecompositionMetadata> DecomposeAndSplitAsync(WorkflowConfiguration config)
+    public async Task<DecompositionMetadata> DecomposeAndSplitAsync(PreparedSource prepared, WorkflowConfiguration config)
     {
-        _logger.LogInformation("Decomposing job {JobId} from source {SourcePath}", config.JobId, config.SourcePath);
+        _logger.LogInformation("Decomposing job {JobId} with {FileCount} files", config.JobId, prepared.SourceFiles.Count);
 
         Directory.CreateDirectory(_outboxOptions.DataOutboxPath);
 
         var proxyRulesByFormat = config.ProxyRules
             .ToDictionary(r => r.SourceFormat.ToLowerInvariant(), r => r);
 
-        string workDir;
-        string packageType;
-        string originalPackageName;
-
-        var ext = Path.GetExtension(config.SourcePath).TrimStart('.').ToLowerInvariant();
-
-        if (ext == "zip" && File.Exists(config.SourcePath))
-        {
-            packageType = "zip";
-            originalPackageName = Path.GetFileName(config.SourcePath);
-            workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{config.JobId}");
-            Directory.CreateDirectory(workDir);
-            ZipFile.ExtractToDirectory(config.SourcePath, workDir, overwriteFiles: true);
-            _logger.LogInformation("Extracted ZIP to temp dir {WorkDir}", workDir);
-        }
-        else if (Directory.Exists(config.SourcePath))
-        {
-            packageType = "folder";
-            originalPackageName = Path.GetFileName(config.SourcePath.TrimEnd(Path.DirectorySeparatorChar));
-            workDir = config.SourcePath;
-        }
-        else if (File.Exists(config.SourcePath))
-        {
-            packageType = ext;
-            originalPackageName = Path.GetFileName(config.SourcePath);
-            workDir = Path.GetDirectoryName(config.SourcePath)!;
-        }
-        else
-        {
-            throw new FileNotFoundException($"SourcePath not found: {config.SourcePath}");
-        }
-
-        var sourceFiles = Directory
-            .EnumerateFiles(workDir, "*", SearchOption.AllDirectories)
-            .ToList();
-
-        _logger.LogInformation("Found {FileCount} files in source for job {JobId}", sourceFiles.Count, config.JobId);
-
         var files = new List<FileDescriptor>();
         var chunkIndex = 1;
 
-        foreach (var filePath in sourceFiles)
+        foreach (var filePath in prepared.SourceFiles)
         {
             var fileExt = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
 
@@ -80,7 +41,7 @@ public class HeavyProcessingActivities
             {
                 _logger.LogWarning("No proxy rule for extension '{Ext}', writing unsupported marker for {File}", fileExt, filePath);
 
-                var unsupportedRelativePath = Path.GetRelativePath(workDir, filePath).Replace('\\', '/');
+                var unsupportedRelativePath = Path.GetRelativePath(prepared.WorkDir, filePath).Replace('\\', '/');
                 var chunkName = $"{config.JobId}_chunk_{chunkIndex}.{fileExt}.UNSUPPORTED.txt";
                 var chunkPath = Path.Combine(_outboxOptions.DataOutboxPath, chunkName);
                 var marker = System.Text.Encoding.UTF8.GetBytes($"Unsupported file type: .{fileExt}");
@@ -92,15 +53,8 @@ public class HeavyProcessingActivities
                 continue;
             }
 
-            // Archive-type rules mean the file should have been extracted already; skip
-            if (rule.RequiredConversion.Any(c => c.StartsWith("Extract ", StringComparison.OrdinalIgnoreCase)))
-            {
-                _logger.LogInformation("Skipping nested archive {File}", filePath);
-                continue;
-            }
-
             var fileBytes = await File.ReadAllBytesAsync(filePath);
-            var relativePath = Path.GetRelativePath(workDir, filePath).Replace('\\', '/');
+            var relativePath = Path.GetRelativePath(prepared.WorkDir, filePath).Replace('\\', '/');
 
             var relDir = Path.GetDirectoryName(relativePath)?.Replace('\\', '/') ?? string.Empty;
             var stem = Path.GetFileNameWithoutExtension(relativePath);
@@ -147,12 +101,10 @@ public class HeavyProcessingActivities
         var totalChunks = chunkIndex - 1;
         _logger.LogInformation("Job {JobId}: wrote {TotalChunks} chunks to outbox", config.JobId, totalChunks);
 
-        // AnswerType, AnswerLocation, and CallingSystem fields are enriched by the workflow
-        // before passing to ManifestActivities
         return new DecompositionMetadata(
             JobId: config.JobId,
-            PackageType: packageType,
-            OriginalPackageName: originalPackageName,
+            PackageType: prepared.PackageType,
+            OriginalPackageName: prepared.OriginalPackageName,
             SourcePath: config.SourcePath,
             TargetPath: config.TargetPath,
             TargetNetwork: string.Empty,
@@ -162,7 +114,7 @@ public class HeavyProcessingActivities
             TotalChunks: totalChunks,
             AnswerType: default,
             AnswerLocation: null,
-            Files: files);
+            Files: files,
+            NestedArchives: prepared.NestedArchives);
     }
-
 }

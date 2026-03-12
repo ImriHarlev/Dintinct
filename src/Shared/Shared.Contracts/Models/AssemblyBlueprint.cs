@@ -17,6 +17,7 @@ public class AssemblyBlueprint
     public AnswerType AnswerType { get; set; }
     public string? AnswerLocation { get; set; }
     public List<FileDescriptor> Files { get; set; } = new();
+    public List<string> NestedArchives { get; set; } = new();
     public HashSet<string> ReceivedChunkNames { get; set; } = new();
     public HashSet<string> UnsupportedChunkNames { get; set; } = new();
     public HashSet<string> HardFailedChunkNames { get; set; } = new();
