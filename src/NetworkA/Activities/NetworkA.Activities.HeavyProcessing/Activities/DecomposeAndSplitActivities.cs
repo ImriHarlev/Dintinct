@@ -35,6 +35,8 @@ public class DecomposeAndSplitActivities
 
         foreach (var filePath in prepared.SourceFiles)
         {
+            ActivityExecutionContext.Current.Heartbeat(filePath);
+
             var fileExt = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
 
             if (!proxyRulesByFormat.TryGetValue(fileExt, out var rule))

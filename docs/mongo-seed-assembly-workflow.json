@@ -1,0 +1,89 @@
+{
+  "_id": "assembly-workflow",
+  "Activities": {
+    "NotifyManifestFailure": {
+      "StartToCloseMinutes": 10,
+      "ScheduleToCloseMinutes": 30,
+      "HeartbeatSeconds": null,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 1,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 30,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "ParseAndPersistManifest": {
+      "StartToCloseMinutes": 5,
+      "ScheduleToCloseMinutes": 15,
+      "HeartbeatSeconds": null,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 1,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 30,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "AssembleAndValidate": {
+      "StartToCloseMinutes": 30,
+      "ScheduleToCloseMinutes": 120,
+      "HeartbeatSeconds": 30,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 5,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 60,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "UpdateBlueprintStatus": {
+      "StartToCloseMinutes": 5,
+      "ScheduleToCloseMinutes": 15,
+      "HeartbeatSeconds": null,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 1,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 30,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "WriteCsvReport": {
+      "StartToCloseMinutes": 10,
+      "ScheduleToCloseMinutes": 30,
+      "HeartbeatSeconds": null,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 1,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 30,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "DispatchAnswer": {
+      "StartToCloseMinutes": 10,
+      "ScheduleToCloseMinutes": 30,
+      "HeartbeatSeconds": null,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 1,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 30,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "UpdateClientA": {
+      "StartToCloseMinutes": 10,
+      "ScheduleToCloseMinutes": 30,
+      "HeartbeatSeconds": null,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 1,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 30,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    }
+  }
+}
