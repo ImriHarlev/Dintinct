@@ -31,6 +31,8 @@ public class HeavyAssemblyActivities
 
         foreach (var file in blueprint.Files)
         {
+            ActivityExecutionContext.Current.Heartbeat(file.OriginalRelativePath);
+
             var allChunkNames = file.ConvertedFiles
                 .SelectMany(cf => cf.Chunks)
                 .Select(c => c.Name)

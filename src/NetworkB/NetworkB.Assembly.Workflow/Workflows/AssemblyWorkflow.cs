@@ -2,6 +2,8 @@ using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
 using Shared.Contracts.Signals;
+using Shared.Infrastructure.Activities;
+using Shared.Infrastructure.Extensions;
 using Temporalio.Workflows;
 using TemporalWorkflow = Temporalio.Workflows.Workflow;
 
@@ -17,10 +19,15 @@ public class AssemblyWorkflow
     private bool _manifestHardFailed;
     private int _expectedChunks;
     private string _manifestFilePath = string.Empty;
+    private WorkflowActivityConfig _activityConfig = null!;
 
     [WorkflowRun]
     public async Task RunAsync(int timeoutMinutes)
     {
+        _activityConfig = await TemporalWorkflow.ExecuteLocalActivityAsync(
+            (WorkflowActivityConfigLocalActivity a) => a.FetchAsync("assembly-workflow"),
+            new LocalActivityOptions { StartToCloseTimeout = TimeSpan.FromSeconds(10) });
+
         // Wait for manifest to arrive — chunks may arrive first (Temporal buffers all signals).
         // Also unblock if the manifest itself hard-failed so we don't hang forever.
         await TemporalWorkflow.WaitConditionAsync(() => _manifestReceived || _manifestHardFailed);
@@ -31,14 +38,14 @@ public class AssemblyWorkflow
             await TemporalWorkflow.ExecuteActivityAsync(
                 "NotifyManifestFailure",
                 [origJobId],
-                new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+                GetOptions("NotifyManifestFailure", "callback-dispatch-tasks"));
             return;
         }
 
         var blueprint = await TemporalWorkflow.ExecuteActivityAsync<AssemblyBlueprint>(
             "ParseAndPersistManifest",
             [_manifestFilePath],
-            new ActivityOptions { TaskQueue = "manifest-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
+            GetOptions("ParseAndPersistManifest", "manifest-assembly-tasks"));
 
         _expectedChunks = blueprint.TotalChunks;
 
@@ -55,7 +62,7 @@ public class AssemblyWorkflow
         var fileResults = await TemporalWorkflow.ExecuteActivityAsync<IReadOnlyList<FileResult>>(
             "AssembleAndValidate",
             [blueprint, _receivedChunkPaths],
-            new ActivityOptions { TaskQueue = "heavy-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(30) });
+            GetOptions("AssembleAndValidate", "heavy-assembly-tasks"));
 
         JobStatus finalStatus;
         if (!allArrived)
@@ -80,22 +87,22 @@ public class AssemblyWorkflow
         await TemporalWorkflow.ExecuteActivityAsync(
             "UpdateBlueprintStatus",
             [blueprint],
-            new ActivityOptions { TaskQueue = "manifest-assembly-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(5) });
+            GetOptions("UpdateBlueprintStatus", "manifest-assembly-tasks"));
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "WriteCsvReport",
             [blueprint, fileResults],
-            new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+            GetOptions("WriteCsvReport", "callback-dispatch-tasks"));
 
         var payload = await TemporalWorkflow.ExecuteActivityAsync<StatusCallbackPayload>(
             "DispatchAnswer",
             [blueprint, fileResults, finalStatus],
-            new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+            GetOptions("DispatchAnswer", "callback-dispatch-tasks"));
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "UpdateClientA",
             [payload],
-            new ActivityOptions { TaskQueue = "callback-dispatch-tasks", StartToCloseTimeout = TimeSpan.FromMinutes(10) });
+            GetOptions("UpdateClientA", "callback-dispatch-tasks"));
     }
 
     [WorkflowSignal]
@@ -130,4 +137,7 @@ public class AssemblyWorkflow
             _hardFailedChunkNames.Add(signal.ChunkName);
         await Task.CompletedTask;
     }
+
+    private ActivityOptions GetOptions(string activityName, string taskQueue) =>
+        _activityConfig.ToActivityOptions(activityName, taskQueue);
 }

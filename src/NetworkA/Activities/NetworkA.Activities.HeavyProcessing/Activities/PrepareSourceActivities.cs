@@ -92,6 +92,8 @@ public class PrepareSourceActivities
 
         foreach (var zipFile in Directory.EnumerateFiles(dir, "*.zip", SearchOption.TopDirectoryOnly).ToList())
         {
+            ActivityExecutionContext.Current.Heartbeat(zipFile);
+
             var relPath = Path.GetRelativePath(rootDir, zipFile).Replace('\\', '/');
             nestedArchives.Add(relPath);
 
