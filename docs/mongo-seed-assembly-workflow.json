@@ -25,9 +25,21 @@
         "NonRetryableErrorTypes": []
       }
     },
-    "AssembleAndValidate": {
+    "AssembleFiles": {
       "StartToCloseMinutes": 30,
       "ScheduleToCloseMinutes": 120,
+      "HeartbeatSeconds": 30,
+      "RetryPolicy": {
+        "InitialIntervalSeconds": 5,
+        "BackoffCoefficient": 2.0,
+        "MaximumIntervalSeconds": 60,
+        "MaximumAttempts": 3,
+        "NonRetryableErrorTypes": []
+      }
+    },
+    "RepackAndFinalize": {
+      "StartToCloseMinutes": 15,
+      "ScheduleToCloseMinutes": 60,
       "HeartbeatSeconds": 30,
       "RetryPolicy": {
         "InitialIntervalSeconds": 5,
