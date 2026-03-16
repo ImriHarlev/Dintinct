@@ -25,7 +25,8 @@ builder.Services.AddTemporalClient(opts =>
 
 builder.Services
     .AddHostedTemporalWorker(taskQueue: "heavy-assembly-tasks")
-    .AddScopedActivities<HeavyAssemblyActivities>();
+    .AddScopedActivities<AssembleFilesActivities>()
+    .AddScopedActivities<RepackAndFinalizeActivities>();
 
 var host = builder.Build();
 

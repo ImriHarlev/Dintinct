@@ -59,10 +59,17 @@ public class AssemblyWorkflow
         blueprint.HardFailedChunkNames = new HashSet<string>(_hardFailedChunkNames);
         blueprint.UnsupportedChunkNames = new HashSet<string>(_unsupportedChunkNames);
 
-        var fileResults = await TemporalWorkflow.ExecuteActivityAsync<IReadOnlyList<FileResult>>(
-            "AssembleAndValidate",
+        var assembleResult = await TemporalWorkflow.ExecuteActivityAsync<AssembleFilesResult>(
+            "AssembleFiles",
             [blueprint, _receivedChunkPaths],
-            GetOptions("AssembleAndValidate", "heavy-assembly-tasks"));
+            GetOptions("AssembleFiles", "heavy-assembly-tasks"));
+
+        await TemporalWorkflow.ExecuteActivityAsync(
+            "RepackAndFinalize",
+            [blueprint, assembleResult.AssemblyDir],
+            GetOptions("RepackAndFinalize", "heavy-assembly-tasks"));
+
+        var fileResults = assembleResult.FileResults;
 
         JobStatus finalStatus;
         if (!allArrived)
