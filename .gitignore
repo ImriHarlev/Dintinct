@@ -74,6 +74,3 @@ appsettings.*.local.json
 *.tmp
 *.bak
 temp/
-
-## User-specific
-launchSettings.json
