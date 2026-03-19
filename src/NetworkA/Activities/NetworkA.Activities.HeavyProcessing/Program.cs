@@ -1,4 +1,6 @@
 using NetworkA.Activities.HeavyProcessing.Activities;
+using NetworkA.Activities.HeavyProcessing.Options;
+using NetworkA.Activities.HeavyProcessing.Splitters;
 using Serilog;
 using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Options;
@@ -15,6 +17,10 @@ builder.Services.AddSerilog();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
+builder.Services.Configure<AsposeOptions>(builder.Configuration.GetSection("Splitters:docx:Aspose"));
+builder.Services.AddScoped<FileSplitterFactory>();
+builder.Services.AddScoped<DefaultFileSplitter>();
+builder.Services.AddScoped<IFileSplitter, DocxFileSplitter>();
 
 var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 builder.Services.AddTemporalClient(opts =>

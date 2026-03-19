@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
+using NetworkB.Activities.HeavyAssembly.Assemblers;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
 using Temporalio.Activities;
@@ -8,10 +9,12 @@ namespace NetworkB.Activities.HeavyAssembly.Activities;
 
 public class AssembleFilesActivities
 {
+    private readonly FileAssemblerFactory _assemblerFactory;
     private readonly ILogger<AssembleFilesActivities> _logger;
 
-    public AssembleFilesActivities(ILogger<AssembleFilesActivities> logger)
+    public AssembleFilesActivities(FileAssemblerFactory assemblerFactory, ILogger<AssembleFilesActivities> logger)
     {
+        _assemblerFactory = assemblerFactory;
         _logger = logger;
     }
 
@@ -61,7 +64,7 @@ public class AssembleFilesActivities
             }
 
             var sortedChunks = primaryConvertedFile.Chunks.OrderBy(c => c.Index).ToList();
-            var outputBytes = new List<byte>();
+            var assembledChunks = new List<AssemblyChunk>();
             var checksumFailed = false;
 
             foreach (var chunk in sortedChunks)
@@ -87,7 +90,7 @@ public class AssembleFilesActivities
                     break;
                 }
 
-                outputBytes.AddRange(chunkBytes);
+                assembledChunks.Add(new AssemblyChunk(chunk.Name, chunkPath, chunkBytes));
             }
 
             if (checksumFailed)
@@ -96,14 +99,15 @@ public class AssembleFilesActivities
                 continue;
             }
 
-            // Write assembled bytes to the original relative path inside the assembly dir.
-            // The extension is the original format — this is the "reversal" of the extension-rename conversion.
             var outputPath = Path.Combine(assemblyDir, file.OriginalRelativePath.Replace('/', Path.DirectorySeparatorChar));
             var outputDir = Path.GetDirectoryName(outputPath);
             if (outputDir is not null)
+            {
                 Directory.CreateDirectory(outputDir);
+            }
 
-            await File.WriteAllBytesAsync(outputPath, outputBytes.ToArray());
+            var assembler = _assemblerFactory.GetAssembler(file.OriginalFormat);
+            await assembler.AssembleAsync(new AssemblyRequest(file.OriginalFormat, outputPath, assembledChunks));
 
             results.Add(new FileResult(FileTransferStatus.Completed, file.OriginalRelativePath));
         }

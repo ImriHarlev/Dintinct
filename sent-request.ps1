@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 # Configuration
 $externalId = "externalId-$([guid]::NewGuid().ToString().Substring(0,8))"
-$sourcePackage = "\network-a\incoming\nested.zip"
+$sourcePackage = "\network-a\incoming\2.docx"
 $targetPath = "\network-b\output"
 $responsePath = "\network-b\responses"
 
