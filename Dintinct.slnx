@@ -1,15 +1,18 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/NetworkA/">
-    <Project Path="src/NetworkA/NetworkA.Callback.Receiver/NetworkA.Callback.Receiver.csproj" />
+	<Project Path="src/NetworkA/NetworkA.Callback.Receiver/NetworkA.Callback.Receiver.csproj" />
     <Project Path="src/NetworkA/NetworkA.Decomposition.Workflow/NetworkA.Decomposition.Workflow.csproj" />
-    <Project Path="src/NetworkA/NetworkA.Ingestion.API/NetworkA.Ingestion.API.csproj" />
   </Folder>
   <Folder Name="/src/NetworkA/Activities/">
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.Dispatch/NetworkA.Activities.Dispatch.csproj" />
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.HeavyProcessing/NetworkA.Activities.HeavyProcessing.csproj" />
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.JobSetup/NetworkA.Activities.JobSetup.csproj" />
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.Manifest/NetworkA.Activities.Manifest.csproj" />
+  </Folder>
+  <Folder Name="/src/NetworkA/Listeners/">
+    <Project Path="src/NetworkA/NetworkA.DirectoryListener.Service/NetworkA.DirectoryListener.Service.csproj" />
+    <Project Path="src/NetworkA/NetworkA.Ingestion.API/NetworkA.Ingestion.API.csproj" />
   </Folder>
   <Folder Name="/src/NetworkB/">
     <Project Path="src/NetworkB/NetworkB.Assembly.Workflow/NetworkB.Assembly.Workflow.csproj" />
