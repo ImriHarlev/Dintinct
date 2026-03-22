@@ -1,7 +1,6 @@
 using Aspose.Words;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NetworkB.Activities.HeavyAssembly.Options;
+using Shared.Infrastructure.Options;
 
 namespace NetworkB.Activities.HeavyAssembly.Assemblers;
 

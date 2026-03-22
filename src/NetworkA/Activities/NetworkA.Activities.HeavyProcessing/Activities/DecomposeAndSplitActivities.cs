@@ -70,17 +70,17 @@ public class DecomposeAndSplitActivities
                     .ToList()
                 : (IReadOnlyList<string>)[relativePath];
             var convertedFileDescriptors = new List<ConvertedFileDescriptor>();
-            var splitChunks = await splitter.SplitAsync(new SplitRequest(filePath, rule.FileSizeLimitMb));
 
             foreach (var convertedRelativePath in convertedPaths)
             {
+                var chunkExt = Path.GetExtension(convertedRelativePath).TrimStart('.');
+                var splitChunks = await splitter.SplitAsync(new SplitRequest(filePath, rule.FileSizeLimitMb));
                 var chunks = new List<ChunkDescriptor>();
 
                 for (var i = 0; i < splitChunks.Count; i++)
                 {
                     var splitChunk = splitChunks[i];
 
-                    var chunkExt = Path.GetExtension(convertedRelativePath).TrimStart('.');
                     var chunkName = $"{config.JobId}_chunk_{chunkIndex}.{chunkExt}";
                     var chunkPath = Path.Combine(_outboxOptions.DataOutboxPath, chunkName);
                     await File.WriteAllBytesAsync(chunkPath, splitChunk);

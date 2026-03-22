@@ -1,4 +1,4 @@
-namespace NetworkA.Activities.HeavyProcessing.Options;
+namespace Shared.Infrastructure.Options;
 
 public sealed class AsposeOptions
 {

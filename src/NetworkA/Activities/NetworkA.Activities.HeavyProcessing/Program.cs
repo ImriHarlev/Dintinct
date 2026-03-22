@@ -1,8 +1,6 @@
 using NetworkA.Activities.HeavyProcessing.Activities;
-using NetworkA.Activities.HeavyProcessing.Options;
 using NetworkA.Activities.HeavyProcessing.Splitters;
 using Serilog;
-using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;

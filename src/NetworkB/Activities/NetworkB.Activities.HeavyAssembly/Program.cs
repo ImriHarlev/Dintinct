@@ -1,8 +1,6 @@
 using NetworkB.Activities.HeavyAssembly.Activities;
 using NetworkB.Activities.HeavyAssembly.Assemblers;
-using NetworkB.Activities.HeavyAssembly.Options;
 using Serilog;
-using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;

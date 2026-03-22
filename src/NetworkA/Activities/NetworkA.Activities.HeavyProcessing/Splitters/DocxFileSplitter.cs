@@ -1,8 +1,7 @@
 using Aspose.Words;
 using Aspose.Words.Saving;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NetworkA.Activities.HeavyProcessing.Options;
+using Shared.Infrastructure.Options;
 
 namespace NetworkA.Activities.HeavyProcessing.Splitters;
 
