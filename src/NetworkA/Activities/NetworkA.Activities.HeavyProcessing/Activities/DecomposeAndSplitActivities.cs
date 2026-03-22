@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NetworkA.Activities.HeavyProcessing.Splitters;
 using Shared.Contracts.Models;
 using Shared.Infrastructure.Options;
 using Temporalio.Activities;
@@ -11,13 +12,16 @@ public class DecomposeAndSplitActivities
 {
     private readonly OutboxOptions _outboxOptions;
     private readonly ILogger<DecomposeAndSplitActivities> _logger;
+    private readonly FileSplitterFactory _splitterFactory;
 
     public DecomposeAndSplitActivities(
         IOptions<OutboxOptions> outboxOptions,
-        ILogger<DecomposeAndSplitActivities> logger)
+        ILogger<DecomposeAndSplitActivities> logger,
+        FileSplitterFactory splitterFactory)
     {
         _outboxOptions = outboxOptions.Value;
         _logger = logger;
+        _splitterFactory = splitterFactory;
     }
 
     [Activity]
@@ -55,8 +59,8 @@ public class DecomposeAndSplitActivities
                 continue;
             }
 
-            var fileBytes = await File.ReadAllBytesAsync(filePath);
             var relativePath = Path.GetRelativePath(prepared.WorkDir, filePath).Replace('\\', '/');
+            var splitter = _splitterFactory.GetSplitter(fileExt);
 
             var relDir = Path.GetDirectoryName(relativePath)?.Replace('\\', '/') ?? string.Empty;
             var stem = Path.GetFileNameWithoutExtension(relativePath);
@@ -69,27 +73,19 @@ public class DecomposeAndSplitActivities
 
             foreach (var convertedRelativePath in convertedPaths)
             {
-                var chunkSizeBytes = rule.FileSizeLimitMb.HasValue
-                    ? rule.FileSizeLimitMb.Value * 1024 * 1024
-                    : fileBytes.Length;
-
-                var chunkCount = (int)Math.Ceiling((double)fileBytes.Length / chunkSizeBytes);
-                if (chunkCount < 1) chunkCount = 1;
-
+                var chunkExt = Path.GetExtension(convertedRelativePath).TrimStart('.');
+                var splitChunks = await splitter.SplitAsync(new SplitRequest(filePath, rule.FileSizeLimitMb));
                 var chunks = new List<ChunkDescriptor>();
 
-                for (var i = 0; i < chunkCount; i++)
+                for (var i = 0; i < splitChunks.Count; i++)
                 {
-                    var offset = i * chunkSizeBytes;
-                    var length = Math.Min(chunkSizeBytes, fileBytes.Length - offset);
-                    var slice = fileBytes.AsSpan(offset, length).ToArray();
+                    var splitChunk = splitChunks[i];
 
-                    var chunkExt = Path.GetExtension(convertedRelativePath).TrimStart('.');
                     var chunkName = $"{config.JobId}_chunk_{chunkIndex}.{chunkExt}";
                     var chunkPath = Path.Combine(_outboxOptions.DataOutboxPath, chunkName);
-                    await File.WriteAllBytesAsync(chunkPath, slice);
+                    await File.WriteAllBytesAsync(chunkPath, splitChunk);
 
-                    var checksum = Convert.ToHexString(SHA256.HashData(slice)).ToLowerInvariant();
+                    var checksum = Convert.ToHexString(SHA256.HashData(splitChunk)).ToLowerInvariant();
                     chunks.Add(new ChunkDescriptor(chunkName, i + 1, checksum));
                     chunkIndex++;
                 }

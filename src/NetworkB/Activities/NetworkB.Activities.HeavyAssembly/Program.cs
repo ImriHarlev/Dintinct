@@ -1,6 +1,6 @@
 using NetworkB.Activities.HeavyAssembly.Activities;
+using NetworkB.Activities.HeavyAssembly.Assemblers;
 using Serilog;
-using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
@@ -15,6 +15,10 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSerilog();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
+builder.Services.Configure<AsposeOptions>(builder.Configuration.GetSection("Assemblers:docx:Aspose"));
+builder.Services.AddScoped<FileAssemblerFactory>();
+builder.Services.AddScoped<DefaultFileAssembler>();
+builder.Services.AddScoped<IFileAssembler, DocsAssembler>();
 
 var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 builder.Services.AddTemporalClient(opts =>
