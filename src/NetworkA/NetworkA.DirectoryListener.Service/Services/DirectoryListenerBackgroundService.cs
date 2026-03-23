@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using NetworkA.DirectoryListener.Service.Options;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace NetworkA.DirectoryListener.Service.Services;
 
@@ -10,22 +11,25 @@ public class DirectoryListenerBackgroundService : BackgroundService
     private readonly DirectoryListenerOptions _options;
     private readonly IInputSubmissionService _inputSubmissionService;
     private readonly ILogger<DirectoryListenerBackgroundService> _logger;
+    private readonly IFusionCache _cache;
     private readonly Channel<QueuedFile> _queue;
     private readonly ConcurrentDictionary<string, byte> _queuedFiles = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, FileStamp> _processedFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<FileSystemWatcher> _watchers = [];
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _stableFor;
     private readonly int _maxConcurrency;
+    private static readonly TimeSpan ProcessedFilesRetention = TimeSpan.FromMinutes(5);
 
     public DirectoryListenerBackgroundService(
         IOptions<DirectoryListenerOptions> options,
         IInputSubmissionService inputSubmissionService,
-        ILogger<DirectoryListenerBackgroundService> logger)
+        ILogger<DirectoryListenerBackgroundService> logger,
+        IFusionCache cache)
     {
         _options = options.Value;
         _inputSubmissionService = inputSubmissionService;
         _logger = logger;
+        _cache = cache;
         _pollInterval = TimeSpan.FromSeconds(_options.PollIntervalSeconds);
         _stableFor = TimeSpan.FromSeconds(_options.StableForSeconds);
         _maxConcurrency = Math.Max(1, _options.MaxConcurrency);
@@ -171,10 +175,11 @@ public class DirectoryListenerBackgroundService : BackgroundService
             return;
 
         var key = BuildFileKey(directory, filePath);
-        if (_processedFiles.TryGetValue(key, out var processedStamp))
+        var processedStamp = _cache.TryGet<FileStamp>(key);
+        if (processedStamp.HasValue)
         {
             var currentStamp = GetStamp(filePath);
-            if (currentStamp is not null && currentStamp.Value.Equals(processedStamp))
+            if (currentStamp is not null && currentStamp.Value.Equals(processedStamp.Value))
                 return;
         }
 
@@ -223,11 +228,12 @@ public class DirectoryListenerBackgroundService : BackgroundService
         if (stableStamp is null)
             return;
 
-        if (_processedFiles.TryGetValue(queuedFile.Key, out var processedStamp) && processedStamp.Equals(stableStamp.Value))
+        var processedStamp = _cache.TryGet<FileStamp>(queuedFile.Key);
+        if (processedStamp.HasValue && processedStamp.Value.Equals(stableStamp.Value))
             return;
 
         var jobId = await _inputSubmissionService.SubmitAsync(queuedFile.Directory, queuedFile.FilePath, ct);
-        _processedFiles[queuedFile.Key] = stableStamp.Value;
+        _cache.Set(queuedFile.Key, stableStamp.Value, ProcessedFilesRetention);
 
         _logger.LogInformation(
             "Queued file {FilePath} submitted as job {JobId} for listener {ListenerName}",

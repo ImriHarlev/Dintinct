@@ -22,6 +22,8 @@ builder.Services.Configure<DirectoryListenerOptions>(builder.Configuration.GetSe
 builder.Services.AddMongoDb();
 builder.Services.AddTemporalClient();
 
+builder.Services.AddFusionCache();
+
 builder.Services.AddScoped<IJobRepository, MongoJobRepository>();
 builder.Services.AddSingleton<IInputSubmissionService, InputSubmissionService>();
 builder.Services.AddHostedService<DirectoryListenerBackgroundService>();
