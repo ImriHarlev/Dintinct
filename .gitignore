@@ -74,3 +74,4 @@ appsettings.*.local.json
 *.tmp
 *.bak
 temp/
+.$architecture.drawio.bkp
