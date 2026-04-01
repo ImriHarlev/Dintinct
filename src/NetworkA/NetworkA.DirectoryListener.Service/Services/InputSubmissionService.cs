@@ -1,8 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
 using NetworkA.DirectoryListener.Service.Options;
 using Shared.Contracts.Enums;
-using Shared.Contracts.Interfaces;
-using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
 using Temporalio.Client;
 
@@ -10,16 +7,11 @@ namespace NetworkA.DirectoryListener.Service.Services;
 
 public class InputSubmissionService : IInputSubmissionService
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ITemporalClient _temporalClient;
     private readonly ILogger<InputSubmissionService> _logger;
 
-    public InputSubmissionService(
-        IServiceScopeFactory serviceScopeFactory,
-        ITemporalClient temporalClient,
-        ILogger<InputSubmissionService> logger)
+    public InputSubmissionService(ITemporalClient temporalClient, ILogger<InputSubmissionService> logger)
     {
-        _serviceScopeFactory = serviceScopeFactory;
         _temporalClient = temporalClient;
         _logger = logger;
     }
@@ -31,23 +23,6 @@ public class InputSubmissionService : IInputSubmissionService
 
         var jobId = Guid.NewGuid().ToString();
         var workflowId = $"decomposition-{jobId}";
-        var utcNow = DateTime.UtcNow;
-
-        var job = new Job
-        {
-            Id = jobId,
-            ExternalId = payload.ExternalId,
-            OriginalRequest = payload,
-            Status = "Processing",
-            TemporalWorkflowId = workflowId,
-            CreatedAt = utcNow,
-            UpdatedAt = utcNow
-        };
-
-        using var scope = _serviceScopeFactory.CreateScope();
-        var jobRepository = scope.ServiceProvider.GetRequiredService<IJobRepository>();
-
-        await jobRepository.UpsertAsync(job, ct);
 
         await _temporalClient.StartWorkflowAsync(
             "DecompositionWorkflow",
@@ -56,9 +31,7 @@ public class InputSubmissionService : IInputSubmissionService
 
         _logger.LogInformation(
             "Started workflow {WorkflowId} for file {FilePath} from listener {ListenerName}",
-            workflowId,
-            filePath,
-            directory.Name);
+            workflowId, filePath, directory.Name);
 
         return jobId;
     }

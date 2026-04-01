@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using NetworkB.Activities.ManifestState.Interfaces;
 using Shared.Contracts.Models;
 using Temporalio.Activities;
 
@@ -7,23 +6,17 @@ namespace NetworkB.Activities.ManifestState.Activities;
 
 public class UpdateBlueprintStatusActivities
 {
-    private readonly IAssemblyBlueprintRepository _repository;
     private readonly ILogger<UpdateBlueprintStatusActivities> _logger;
 
-    public UpdateBlueprintStatusActivities(
-        IAssemblyBlueprintRepository repository,
-        ILogger<UpdateBlueprintStatusActivities> logger)
+    public UpdateBlueprintStatusActivities(ILogger<UpdateBlueprintStatusActivities> logger)
     {
-        _repository = repository;
         _logger = logger;
     }
 
     [Activity]
-    public async Task UpdateBlueprintStatusAsync(AssemblyBlueprint blueprint)
+    public Task UpdateBlueprintStatusAsync(AssemblyBlueprint blueprint)
     {
-        blueprint.UpdatedAt = DateTime.UtcNow;
-        await _repository.UpsertAsync(blueprint);
-
-        _logger.LogInformation("Blueprint status updated for job {JobId}: {Status}", blueprint.Id, blueprint.Status);
+        _logger.LogInformation("Blueprint status for job {JobId}: {Status}", blueprint.Id, blueprint.Status);
+        return Task.CompletedTask;
     }
 }

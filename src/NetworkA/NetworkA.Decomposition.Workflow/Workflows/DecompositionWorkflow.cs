@@ -26,7 +26,7 @@ public class DecompositionWorkflow
 
         _config = await TemporalWorkflow.ExecuteActivityAsync<WorkflowConfiguration>(
             "FetchConfiguration",
-            [jobId],
+            [jobId, request.SourcePath, request.TargetPath],
             GetOptions("FetchConfiguration", "setup-tasks"));
 
         var prepared = await TemporalWorkflow.ExecuteActivityAsync<PreparedSource>(

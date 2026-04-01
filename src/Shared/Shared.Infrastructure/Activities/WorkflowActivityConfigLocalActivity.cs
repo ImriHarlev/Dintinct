@@ -1,28 +1,42 @@
+using Microsoft.Extensions.Options;
 using Shared.Contracts.Models;
-using Shared.Infrastructure.Cache;
+using Shared.Infrastructure.Options;
 using Temporalio.Activities;
 
 namespace Shared.Infrastructure.Activities;
 
 public class WorkflowActivityConfigLocalActivity
 {
-    private readonly IWorkflowActivityConfigCache _cache;
+    private readonly WorkflowActivityConfigOptions _options;
 
-    public WorkflowActivityConfigLocalActivity(IWorkflowActivityConfigCache cache)
+    public WorkflowActivityConfigLocalActivity(IOptions<WorkflowActivityConfigOptions> options)
     {
-        _cache = cache;
+        _options = options.Value;
     }
 
     [Activity]
-    public async Task<WorkflowActivityConfig> FetchAsync(string workflowKey)
+    public Task<WorkflowActivityConfig> FetchAsync(string workflowKey)
     {
-        var config = await _cache.GetAsync(workflowKey);
-
-        if (config is null)
+        if (!_options.Configs.TryGetValue(workflowKey, out var entry))
             throw new InvalidOperationException(
-                $"No activity configuration found in MongoDB for workflow key '{workflowKey}'. " +
-                "Insert a document into the 'workflow_activity_configs' collection before starting workflows.");
+                $"No activity configuration found for workflow key '{workflowKey}'. " +
+                "Add an entry under 'WorkflowActivityConfig:Configs' in appsettings.json.");
 
-        return config;
+        var activities = entry.Activities.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new ActivityTimeoutConfig(
+                kvp.Value.StartToCloseMinutes,
+                kvp.Value.ScheduleToCloseMinutes,
+                kvp.Value.HeartbeatSeconds,
+                kvp.Value.RetryPolicy is { } rp
+                    ? new RetryPolicyConfig(
+                        rp.InitialIntervalSeconds,
+                        rp.BackoffCoefficient,
+                        rp.MaximumIntervalSeconds,
+                        rp.MaximumAttempts,
+                        rp.NonRetryableErrorTypes)
+                    : null));
+
+        return Task.FromResult(new WorkflowActivityConfig(workflowKey, activities));
     }
 }

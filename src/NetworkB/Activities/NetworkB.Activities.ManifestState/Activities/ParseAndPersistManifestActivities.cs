@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using NetworkB.Activities.ManifestState.Interfaces;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
 using Temporalio.Activities;
@@ -9,14 +8,10 @@ namespace NetworkB.Activities.ManifestState.Activities;
 
 public class ParseAndPersistManifestActivities
 {
-    private readonly IAssemblyBlueprintRepository _repository;
     private readonly ILogger<ParseAndPersistManifestActivities> _logger;
 
-    public ParseAndPersistManifestActivities(
-        IAssemblyBlueprintRepository repository,
-        ILogger<ParseAndPersistManifestActivities> logger)
+    public ParseAndPersistManifestActivities(ILogger<ParseAndPersistManifestActivities> logger)
     {
-        _repository = repository;
         _logger = logger;
     }
 
@@ -33,7 +28,6 @@ public class ParseAndPersistManifestActivities
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
-        // Deserialize the hierarchical manifest matching data-model.md §3.2 schema
         var metadata = JsonSerializer.Deserialize<ManifestDocument>(json, options)
             ?? throw new InvalidOperationException($"Failed to parse manifest at {manifestFilePath}");
 
@@ -61,15 +55,12 @@ public class ParseAndPersistManifestActivities
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _repository.UpsertAsync(blueprint);
-
-        _logger.LogInformation("Blueprint persisted for job {JobId} with {TotalChunks} expected chunks",
+        _logger.LogInformation("Manifest parsed for job {JobId} with {TotalChunks} expected chunks",
             blueprint.Id, blueprint.TotalChunks);
 
         return blueprint;
     }
 
-    // Intermediate deserialization type matching the manifest JSON schema
     private record ManifestDocument(
         string JobId,
         string PackageType,
