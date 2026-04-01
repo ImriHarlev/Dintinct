@@ -17,9 +17,9 @@ public class RetryChunkActivity
     }
 
     [Activity]
-    public async Task RetryChunkAsync(string jobId, string chunkName)
+    public async Task RetryChunkAsync(string chunkName)
     {
-        _logger.LogInformation("Retrying chunk {ChunkName} for job {JobId}", chunkName, jobId);
+        _logger.LogInformation("Retrying chunk {ChunkName}", chunkName);
 
         var outboxPath = ResolveOutboxPath(chunkName);
         var chunkPath = Path.Combine(outboxPath, chunkName);
@@ -32,7 +32,7 @@ public class RetryChunkActivity
 
         File.SetLastWriteTimeUtc(chunkPath, DateTime.UtcNow);
 
-        _logger.LogInformation("Chunk {ChunkName} touched in outbox for retry, job {JobId}", chunkName, jobId);
+        _logger.LogInformation("Chunk {ChunkName} touched in outbox for retry", chunkName);
     }
 
     private string ResolveOutboxPath(string chunkName) =>

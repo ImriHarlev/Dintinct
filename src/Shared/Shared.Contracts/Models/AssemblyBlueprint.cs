@@ -22,6 +22,4 @@ public class AssemblyBlueprint
     public HashSet<string> UnsupportedChunkNames { get; set; } = new();
     public HashSet<string> HardFailedChunkNames { get; set; } = new();
     public string Status { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
 }

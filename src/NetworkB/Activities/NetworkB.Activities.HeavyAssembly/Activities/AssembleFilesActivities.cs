@@ -29,6 +29,7 @@ public class AssembleFilesActivities
         var assemblyDir = Path.Combine(blueprint.TargetPath, $"_assembly_{blueprint.Id}");
         Directory.CreateDirectory(assemblyDir);
 
+
         var results = new List<FileResult>();
 
         foreach (var file in blueprint.Files)
@@ -117,6 +118,6 @@ public class AssembleFilesActivities
             results.Count(r => r.Status == FileTransferStatus.Completed),
             results.Count(r => r.Status != FileTransferStatus.Completed));
 
-        return new AssembleFilesResult(results, assemblyDir);
+        return new AssembleFilesResult(results);
     }
 }

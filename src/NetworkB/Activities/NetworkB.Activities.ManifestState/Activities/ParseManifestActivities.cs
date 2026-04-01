@@ -6,17 +6,17 @@ using Temporalio.Activities;
 
 namespace NetworkB.Activities.ManifestState.Activities;
 
-public class ParseAndPersistManifestActivities
+public class ParseManifestActivities
 {
-    private readonly ILogger<ParseAndPersistManifestActivities> _logger;
+    private readonly ILogger<ParseManifestActivities> _logger;
 
-    public ParseAndPersistManifestActivities(ILogger<ParseAndPersistManifestActivities> logger)
+    public ParseManifestActivities(ILogger<ParseManifestActivities> logger)
     {
         _logger = logger;
     }
 
     [Activity]
-    public async Task<AssemblyBlueprint> ParseAndPersistManifestAsync(string manifestFilePath)
+    public async Task<AssemblyBlueprint> ParseManifestAsync(string manifestFilePath)
     {
         _logger.LogInformation("Parsing manifest from {ManifestFilePath}", manifestFilePath);
 
@@ -51,8 +51,6 @@ public class ParseAndPersistManifestActivities
             UnsupportedChunkNames = new HashSet<string>(),
             HardFailedChunkNames = new HashSet<string>(),
             Status = "Aggregating",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
         };
 
         _logger.LogInformation("Manifest parsed for job {JobId} with {TotalChunks} expected chunks",

@@ -15,8 +15,10 @@ public class RepackAndFinalizeActivities
     }
 
     [Activity]
-    public Task RepackAndFinalizeAsync(AssemblyBlueprint blueprint, string assemblyDir)
+    public Task RepackAndFinalizeAsync(AssemblyBlueprint blueprint)
     {
+        var assemblyDir = Path.Combine(blueprint.TargetPath, $"_assembly_{blueprint.Id}");
+
         // Re-create nested archives (deepest first so inner archives are present before outer ones zip them)
         foreach (var archivePath in blueprint.NestedArchives.OrderByDescending(p => p.Count(c => c == '/')))
         {

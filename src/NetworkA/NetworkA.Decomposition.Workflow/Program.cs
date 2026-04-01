@@ -1,6 +1,6 @@
+using NetworkA.Decomposition.Workflow.Activities;
 using NetworkA.Decomposition.Workflow.Workflows;
 using Serilog;
-using Shared.Infrastructure.Activities;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
@@ -15,13 +15,15 @@ builder.Services.AddSerilog();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<WorkflowActivityConfigOptions>(builder.Configuration.GetSection("WorkflowActivityConfig"));
+builder.Services.Configure<ProxyConfigOptions>(builder.Configuration.GetSection("ProxyConfig"));
+builder.Services.Configure<RetryPolicyOptions>(builder.Configuration.GetSection("RetryPolicy"));
 
 var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 
 builder.Services
     .AddHostedTemporalWorker(temporalOpts.TargetHost, temporalOpts.Namespace, "decomposition-workflow")
     .AddWorkflow<DecompositionWorkflow>()
-    .AddScopedActivities<WorkflowActivityConfigLocalActivity>();
+    .AddSingletonActivities<DecompositionConfigLocalActivity>();
 
 var host = builder.Build();
 
