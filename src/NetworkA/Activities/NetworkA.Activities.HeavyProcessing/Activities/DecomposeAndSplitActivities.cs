@@ -25,7 +25,7 @@ public class DecomposeAndSplitActivities
     }
 
     [Activity]
-    public async Task<DecompositionMetadata> DecomposeAndSplitAsync(PreparedSource prepared, WorkflowConfiguration config)
+    public async Task<SplitResult> DecomposeAndSplitAsync(PreparedSource prepared, WorkflowConfiguration config)
     {
         _logger.LogInformation("Decomposing job {JobId} with {FileCount} files", config.JobId, prepared.SourceFiles.Count);
 
@@ -99,19 +99,10 @@ public class DecomposeAndSplitActivities
         var totalChunks = chunkIndex - 1;
         _logger.LogInformation("Job {JobId}: wrote {TotalChunks} chunks to outbox", config.JobId, totalChunks);
 
-        return new DecompositionMetadata(
-            JobId: config.JobId,
+        return new SplitResult(
             PackageType: prepared.PackageType,
             OriginalPackageName: prepared.OriginalPackageName,
-            SourcePath: config.SourcePath,
-            TargetPath: config.TargetPath,
-            TargetNetwork: string.Empty,
-            CallingSystemId: string.Empty,
-            CallingSystemName: string.Empty,
-            ExternalId: string.Empty,
             TotalChunks: totalChunks,
-            AnswerType: default,
-            AnswerLocation: null,
             Files: files,
             NestedArchives: prepared.NestedArchives);
     }

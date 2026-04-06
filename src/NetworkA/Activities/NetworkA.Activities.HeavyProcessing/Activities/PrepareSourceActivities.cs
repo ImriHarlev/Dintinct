@@ -15,50 +15,50 @@ public class PrepareSourceActivities
     }
 
     [Activity]
-    public async Task<PreparedSource> PrepareSourceAsync(WorkflowConfiguration config)
+    public async Task<PreparedSource> PrepareSourceAsync(string jobId, string sourcePath)
     {
-        _logger.LogInformation("Preparing source for job {JobId} from {SourcePath}", config.JobId, config.SourcePath);
+        _logger.LogInformation("Preparing source for job {JobId} from {SourcePath}", jobId, sourcePath);
 
-        var ext = Path.GetExtension(config.SourcePath).TrimStart('.').ToLowerInvariant();
+        var ext = Path.GetExtension(sourcePath).TrimStart('.').ToLowerInvariant();
 
         string workDir;
         string packageType;
         string originalPackageName;
 
-        if (ext == "zip" && File.Exists(config.SourcePath))
+        if (ext == "zip" && File.Exists(sourcePath))
         {
             packageType = "zip";
-            originalPackageName = Path.GetFileName(config.SourcePath);
-            workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{config.JobId}");
+            originalPackageName = Path.GetFileName(sourcePath);
+            workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{jobId}");
             Directory.CreateDirectory(workDir);
-            ZipFile.ExtractToDirectory(config.SourcePath, workDir, overwriteFiles: true);
+            ZipFile.ExtractToDirectory(sourcePath, workDir, overwriteFiles: true);
             _logger.LogInformation("Extracted ZIP to temp dir {WorkDir}", workDir);
         }
-        else if (Directory.Exists(config.SourcePath))
+        else if (Directory.Exists(sourcePath))
         {
             packageType = "folder";
-            originalPackageName = Path.GetFileName(config.SourcePath.TrimEnd(Path.DirectorySeparatorChar));
-            workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{config.JobId}");
-            CopyDirectory(config.SourcePath, workDir);
+            originalPackageName = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar));
+            workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{jobId}");
+            CopyDirectory(sourcePath, workDir);
             _logger.LogInformation("Copied folder to temp dir {WorkDir}", workDir);
         }
-        else if (File.Exists(config.SourcePath))
+        else if (File.Exists(sourcePath))
         {
             packageType = ext;
-            originalPackageName = Path.GetFileName(config.SourcePath);
-            workDir = Path.GetDirectoryName(config.SourcePath)!;
+            originalPackageName = Path.GetFileName(sourcePath);
+            workDir = Path.GetDirectoryName(sourcePath)!;
 
-            _logger.LogInformation("Single-file source: {SourcePath}", config.SourcePath);
+            _logger.LogInformation("Single-file source: {SourcePath}", sourcePath);
             return new PreparedSource(
                 WorkDir: workDir,
                 PackageType: packageType,
                 OriginalPackageName: originalPackageName,
-                SourceFiles: [config.SourcePath],
+                SourceFiles: [sourcePath],
                 NestedArchives: []);
         }
         else
         {
-            throw new FileNotFoundException($"SourcePath not found: {config.SourcePath}");
+            throw new FileNotFoundException($"SourcePath not found: {sourcePath}");
         }
 
         var nestedArchives = new List<string>();
@@ -70,7 +70,7 @@ public class PrepareSourceActivities
 
         _logger.LogInformation(
             "Job {JobId}: {FileCount} files, {ArchiveCount} nested archives in prepared source",
-            config.JobId, sourceFiles.Count, nestedArchives.Count);
+            jobId, sourceFiles.Count, nestedArchives.Count);
 
         return new PreparedSource(
             WorkDir: workDir,

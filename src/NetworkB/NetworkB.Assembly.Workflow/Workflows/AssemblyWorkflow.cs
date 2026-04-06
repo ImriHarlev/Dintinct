@@ -1,9 +1,10 @@
+using NetworkB.Assembly.Workflow.Activities;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
 using Shared.Contracts.Signals;
-using Shared.Infrastructure.Activities;
 using Shared.Infrastructure.Extensions;
+
 using Temporalio.Workflows;
 using TemporalWorkflow = Temporalio.Workflows.Workflow;
 
@@ -12,6 +13,7 @@ namespace NetworkB.Assembly.Workflow.Workflows;
 [Workflow]
 public class AssemblyWorkflow
 {
+    private AssemblyRuntimeConfig _runtimeConfig = null!;
     private readonly List<string> _receivedChunkPaths = new();
     private readonly List<string> _hardFailedChunkNames = new();
     private readonly List<string> _unsupportedChunkNames = new();
@@ -19,14 +21,13 @@ public class AssemblyWorkflow
     private bool _manifestHardFailed;
     private int _expectedChunks;
     private string _manifestFilePath = string.Empty;
-    private WorkflowActivityConfig _activityConfig = null!;
 
     [WorkflowRun]
     public async Task RunAsync(int timeoutMinutes)
     {
-        _activityConfig = await TemporalWorkflow.ExecuteLocalActivityAsync(
-            (WorkflowActivityConfigLocalActivity a) => a.FetchAsync("assembly-workflow"),
-            new LocalActivityOptions { StartToCloseTimeout = TimeSpan.FromSeconds(10) });
+        _runtimeConfig = await TemporalWorkflow.ExecuteLocalActivityAsync(
+            (AssemblyConfigLocalActivity a) => a.FetchAsync(),
+            new LocalActivityOptions { StartToCloseTimeout = TimeSpan.FromSeconds(30) });
 
         // Wait for manifest to arrive — chunks may arrive first (Temporal buffers all signals).
         // Also unblock if the manifest itself hard-failed so we don't hang forever.
@@ -43,9 +44,9 @@ public class AssemblyWorkflow
         }
 
         var blueprint = await TemporalWorkflow.ExecuteActivityAsync<AssemblyBlueprint>(
-            "ParseAndPersistManifest",
+            "ParseManifest",
             [_manifestFilePath],
-            GetOptions("ParseAndPersistManifest", "manifest-assembly-tasks"));
+            GetOptions("ParseManifest", "manifest-assembly-tasks"));
 
         _expectedChunks = blueprint.TotalChunks;
 
@@ -66,7 +67,7 @@ public class AssemblyWorkflow
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "RepackAndFinalize",
-            [blueprint, assembleResult.AssemblyDir],
+            [blueprint],
             GetOptions("RepackAndFinalize", "heavy-assembly-tasks"));
 
         var fileResults = assembleResult.FileResults;
@@ -90,11 +91,6 @@ public class AssemblyWorkflow
         }
 
         blueprint.Status = finalStatus.ToString();
-
-        await TemporalWorkflow.ExecuteActivityAsync(
-            "UpdateBlueprintStatus",
-            [blueprint],
-            GetOptions("UpdateBlueprintStatus", "manifest-assembly-tasks"));
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "WriteCsvReport",
@@ -146,5 +142,5 @@ public class AssemblyWorkflow
     }
 
     private ActivityOptions GetOptions(string activityName, string taskQueue) =>
-        _activityConfig.ToActivityOptions(activityName, taskQueue);
+        _runtimeConfig.ActivityConfig.Activities[activityName].ToActivityOptions(taskQueue);
 }

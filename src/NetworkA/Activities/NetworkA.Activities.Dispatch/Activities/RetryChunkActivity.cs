@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Shared.Contracts.Interfaces;
 using Shared.Infrastructure.Options;
 using Temporalio.Activities;
 
@@ -8,24 +7,19 @@ namespace NetworkA.Activities.Dispatch.Activities;
 
 public class RetryChunkActivity
 {
-    private readonly IJobRepository _jobRepository;
     private readonly OutboxOptions _outboxOptions;
     private readonly ILogger<RetryChunkActivity> _logger;
 
-    public RetryChunkActivity(
-        IJobRepository jobRepository,
-        IOptions<OutboxOptions> outboxOptions,
-        ILogger<RetryChunkActivity> logger)
+    public RetryChunkActivity(IOptions<OutboxOptions> outboxOptions, ILogger<RetryChunkActivity> logger)
     {
-        _jobRepository = jobRepository;
         _outboxOptions = outboxOptions.Value;
         _logger = logger;
     }
 
     [Activity]
-    public async Task RetryChunkAsync(string jobId, string chunkName)
+    public async Task RetryChunkAsync(string chunkName)
     {
-        _logger.LogInformation("Retrying chunk {ChunkName} for job {JobId}", chunkName, jobId);
+        _logger.LogInformation("Retrying chunk {ChunkName}", chunkName);
 
         var outboxPath = ResolveOutboxPath(chunkName);
         var chunkPath = Path.Combine(outboxPath, chunkName);
@@ -36,13 +30,9 @@ public class RetryChunkActivity
             return;
         }
 
-        // Touch the existing chunk file to re-trigger the proxy file-system watcher
         File.SetLastWriteTimeUtc(chunkPath, DateTime.UtcNow);
 
-        await _jobRepository.IncrementChunkRetryCountAsync(jobId, chunkName);
-
-        _logger.LogInformation("Chunk {ChunkName} touched in outbox and retry counter incremented for job {JobId}",
-            chunkName, jobId);
+        _logger.LogInformation("Chunk {ChunkName} touched in outbox for retry", chunkName);
     }
 
     private string ResolveOutboxPath(string chunkName) =>

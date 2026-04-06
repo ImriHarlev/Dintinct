@@ -17,26 +17,7 @@ services:
       - airgap_net
 
   # ==========================================
-  # 2. DATABASES & CACHING (Rules & Logic)
-  # ==========================================
-  mongodb:
-    image: mongo:latest
-    container_name: airgap_mongo
-    ports:
-      - "27017:27017" # Standard MongoDB port
-    networks:
-      - airgap_net
-
-  redis:
-    image: redis:alpine
-    container_name: airgap_redis
-    ports:
-      - "6379:6379" # Standard Redis port
-    networks:
-      - airgap_net
-
-  # ==========================================
-  # 3. TEMPORAL ORCHESTRATOR & UI
+  # 2. TEMPORAL ORCHESTRATOR & UI
   # ==========================================
   temporal-db:
     image: postgres:14-alpine

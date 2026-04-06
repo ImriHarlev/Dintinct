@@ -1,8 +1,6 @@
+using NetworkB.Assembly.Workflow.Activities;
 using NetworkB.Assembly.Workflow.Workflows;
 using Serilog;
-using Serilog.Formatting.Compact;
-using Shared.Infrastructure.Activities;
-using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
@@ -16,30 +14,20 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSerilog();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
-builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDB"));
-builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection("Redis"));
+builder.Services.Configure<WorkflowActivityConfigOptions>(builder.Configuration.GetSection("WorkflowActivityConfig"));
 
-builder.Services.AddMongoDb();
-builder.Services.AddRedis();
-builder.Services.AddWorkflowActivityConfig();
-builder.Services.AddTemporalClient();
+var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 
 builder.Services
-    .AddHostedTemporalWorker(taskQueue: "assembly-workflow")
+    .AddHostedTemporalWorker(temporalOpts.TargetHost, temporalOpts.Namespace, "assembly-workflow")
     .AddWorkflow<AssemblyWorkflow>()
-    .AddScopedActivities<WorkflowActivityConfigLocalActivity>();
+    .AddSingletonActivities<AssemblyConfigLocalActivity>();
 
 var host = builder.Build();
 
 using (var scope = host.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    var db = scope.ServiceProvider.GetRequiredService<MongoDB.Driver.IMongoDatabase>();
-    await StartupValidator.ValidateMongoDbAsync(db, "NetworkB.Assembly.Workflow", logger);
-
-    var redis = scope.ServiceProvider.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>();
-    await StartupValidator.ValidateRedisAsync(redis, "NetworkB.Assembly.Workflow", logger);
-
     StartupValidator.LogTemporalWorkerRegistered("NetworkB.Assembly.Workflow", "assembly-workflow", logger);
 }
 

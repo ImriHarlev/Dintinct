@@ -1,6 +1,6 @@
+using NetworkA.Decomposition.Workflow.Activities;
 using Shared.Contracts.Models;
 using Shared.Contracts.Payloads;
-using Shared.Infrastructure.Activities;
 using Shared.Infrastructure.Extensions;
 using Temporalio.Workflows;
 using TemporalWorkflow = Temporalio.Workflows.Workflow;
@@ -10,48 +10,56 @@ namespace NetworkA.Decomposition.Workflow.Workflows;
 [Workflow]
 public class DecompositionWorkflow
 {
+    private DecompositionRuntimeConfig _runtimeConfig = null!;
     private bool _callbackReceived;
     private readonly Dictionary<string, int> _chunkRetryCounts = new();
     private WorkflowConfiguration _config = null!;
-    private WorkflowActivityConfig _activityConfig = null!;
+
+    private string JobId => TemporalWorkflow.Info.WorkflowId.Replace("decomposition-", "");
 
     [WorkflowRun]
     public async Task RunAsync(IngestionRequestPayload request)
     {
-        _activityConfig = await TemporalWorkflow.ExecuteLocalActivityAsync(
-            (WorkflowActivityConfigLocalActivity a) => a.FetchAsync("decomposition-workflow"),
-            new LocalActivityOptions { StartToCloseTimeout = TimeSpan.FromSeconds(10) });
+        _runtimeConfig = await TemporalWorkflow.ExecuteLocalActivityAsync(
+            (DecompositionConfigLocalActivity a) => a.FetchAsync(),
+            new LocalActivityOptions { StartToCloseTimeout = TimeSpan.FromSeconds(30) });
 
-        var jobId = TemporalWorkflow.Info.WorkflowId.Replace("decomposition-", "");
-
-        _config = await TemporalWorkflow.ExecuteActivityAsync<WorkflowConfiguration>(
-            "FetchConfiguration",
-            [jobId],
-            GetOptions("FetchConfiguration", "setup-tasks"));
+        _config = new WorkflowConfiguration(
+            JobId: JobId,
+            SourcePath: request.SourcePath,
+            TargetPath: request.TargetPath,
+            MaxRetryCount: _runtimeConfig.MaxRetryCount,
+            ProxyRules: _runtimeConfig.ProxyRules);
 
         var prepared = await TemporalWorkflow.ExecuteActivityAsync<PreparedSource>(
             "PrepareSource",
-            [_config],
+            [JobId, _config.SourcePath],
             GetOptions("PrepareSource", "heavy-processing-tasks"));
 
-        var metadata = await TemporalWorkflow.ExecuteActivityAsync<DecompositionMetadata>(
+        var splitResult = await TemporalWorkflow.ExecuteActivityAsync<SplitResult>(
             "DecomposeAndSplit",
             [prepared, _config],
             GetOptions("DecomposeAndSplit", "heavy-processing-tasks"));
 
-        var enrichedMetadata = metadata with
-        {
-            AnswerType = request.AnswerType,
-            AnswerLocation = request.AnswerLocation,
-            TargetNetwork = request.TargetNetwork,
-            CallingSystemId = request.CallingSystemId,
-            CallingSystemName = request.CallingSystemName,
-            ExternalId = request.ExternalId
-        };
+        var manifest = new DecompositionMetadata(
+            JobId: JobId,
+            PackageType: splitResult.PackageType,
+            OriginalPackageName: splitResult.OriginalPackageName,
+            SourcePath: _config.SourcePath,
+            TargetPath: _config.TargetPath,
+            TargetNetwork: request.TargetNetwork,
+            CallingSystemId: request.CallingSystemId,
+            CallingSystemName: request.CallingSystemName,
+            ExternalId: request.ExternalId,
+            TotalChunks: splitResult.TotalChunks,
+            AnswerType: request.AnswerType,
+            AnswerLocation: request.AnswerLocation,
+            Files: splitResult.Files,
+            NestedArchives: splitResult.NestedArchives);
 
         await TemporalWorkflow.ExecuteActivityAsync(
             "WriteManifest",
-            [enrichedMetadata],
+            [manifest],
             GetOptions("WriteManifest", "manifest-tasks"));
 
         await TemporalWorkflow.WaitConditionAsync(() => _callbackReceived);
@@ -71,24 +79,23 @@ public class DecompositionWorkflow
             _chunkRetryCounts[chunkName] = 0;
 
         _chunkRetryCounts[chunkName]++;
-        var jobId = TemporalWorkflow.Info.WorkflowId.Replace("decomposition-", "");
 
         if (_chunkRetryCounts[chunkName] <= _config.MaxRetryCount)
         {
             await TemporalWorkflow.ExecuteActivityAsync(
                 "RetryChunk",
-                [jobId, chunkName],
+                [chunkName],
                 GetOptions("RetryChunk", "retry-dispatch-tasks"));
         }
         else
         {
             await TemporalWorkflow.ExecuteActivityAsync(
                 "WriteHardFail",
-                [jobId, chunkName],
+                [chunkName],
                 GetOptions("WriteHardFail", "retry-dispatch-tasks"));
         }
     }
 
     private ActivityOptions GetOptions(string activityName, string taskQueue) =>
-        _activityConfig.ToActivityOptions(activityName, taskQueue);
+        _runtimeConfig.ActivityConfig.Activities[activityName].ToActivityOptions(taskQueue);
 }

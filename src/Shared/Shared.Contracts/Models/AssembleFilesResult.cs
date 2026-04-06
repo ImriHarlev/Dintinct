@@ -1,5 +1,3 @@
 namespace Shared.Contracts.Models;
 
-public record AssembleFilesResult(
-    IReadOnlyList<FileResult> FileResults,
-    string AssemblyDir);
+public record AssembleFilesResult(IReadOnlyList<FileResult> FileResults);

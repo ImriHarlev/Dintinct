@@ -7,7 +7,6 @@
   <Folder Name="/src/NetworkA/Activities/">
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.Dispatch/NetworkA.Activities.Dispatch.csproj" />
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.HeavyProcessing/NetworkA.Activities.HeavyProcessing.csproj" />
-    <Project Path="src/NetworkA/Activities/NetworkA.Activities.JobSetup/NetworkA.Activities.JobSetup.csproj" />
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.Manifest/NetworkA.Activities.Manifest.csproj" />
   </Folder>
   <Folder Name="/src/NetworkA/Listeners/">

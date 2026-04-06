@@ -1,4 +1,4 @@
-using Shared.Contracts.Models;
+using Shared.Infrastructure.Options;
 using Temporalio.Common;
 using Temporalio.Workflows;
 
@@ -7,11 +7,9 @@ namespace Shared.Infrastructure.Extensions;
 public static class ActivityOptionsExtensions
 {
     public static ActivityOptions ToActivityOptions(
-        this WorkflowActivityConfig config,
-        string activityName,
+        this WorkflowActivityConfigOptions.ActivityTimeoutEntry cfg,
         string taskQueue)
     {
-        var cfg = config.Activities[activityName];
         return new ActivityOptions
         {
             TaskQueue = taskQueue,

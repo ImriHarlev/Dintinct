@@ -19,9 +19,9 @@ public class WriteHardFailActivity
     }
 
     [Activity]
-    public async Task WriteHardFailAsync(string jobId, string chunkName)
+    public async Task WriteHardFailAsync(string chunkName)
     {
-        _logger.LogInformation("Writing hard-fail marker for chunk {ChunkName}, job {JobId}", chunkName, jobId);
+        _logger.LogInformation("Writing hard-fail marker for chunk {ChunkName}", chunkName);
 
         var outboxPath = ResolveOutboxPath(chunkName);
         Directory.CreateDirectory(outboxPath);
@@ -29,7 +29,7 @@ public class WriteHardFailActivity
         // Write a .HARDFAIL.txt file per data-model.md §3.1 naming convention
         var hardFailFileName = $"{chunkName}.HARDFAIL.txt";
         var hardFailPath = Path.Combine(outboxPath, hardFailFileName);
-        await File.WriteAllTextAsync(hardFailPath, $"Hard fail for chunk {chunkName} in job {jobId}");
+        await File.WriteAllTextAsync(hardFailPath, $"Hard fail for chunk {chunkName}");
 
         _logger.LogInformation("Hard-fail marker written: {HardFailPath}", hardFailPath);
     }
