@@ -11,8 +11,6 @@ namespace NetworkA.Decomposition.Workflow.Workflows;
 public class DecompositionWorkflow
 {
     private DecompositionRuntimeConfig _runtimeConfig = null!;
-    private bool _callbackReceived;
-    private readonly Dictionary<string, int> _chunkRetryCounts = new();
     private WorkflowConfiguration _config = null!;
 
     private string JobId => TemporalWorkflow.Info.WorkflowId.Replace("decomposition-", "");
@@ -28,7 +26,6 @@ public class DecompositionWorkflow
             JobId: JobId,
             SourcePath: request.SourcePath,
             TargetPath: request.TargetPath,
-            MaxRetryCount: _runtimeConfig.MaxRetryCount,
             ProxyRules: _runtimeConfig.ProxyRules);
 
         var prepared = await TemporalWorkflow.ExecuteActivityAsync<PreparedSource>(
@@ -61,39 +58,6 @@ public class DecompositionWorkflow
             "WriteManifest",
             [manifest],
             GetOptions("WriteManifest", "manifest-tasks"));
-
-        await TemporalWorkflow.WaitConditionAsync(() => _callbackReceived);
-    }
-
-    [WorkflowSignal]
-    public async Task FinalStatusReceivedAsync(StatusCallbackPayload payload)
-    {
-        _callbackReceived = true;
-        await Task.CompletedTask;
-    }
-
-    [WorkflowSignal]
-    public async Task ChunkRetryRequestedAsync(string chunkName)
-    {
-        if (!_chunkRetryCounts.ContainsKey(chunkName))
-            _chunkRetryCounts[chunkName] = 0;
-
-        _chunkRetryCounts[chunkName]++;
-
-        if (_chunkRetryCounts[chunkName] <= _config.MaxRetryCount)
-        {
-            await TemporalWorkflow.ExecuteActivityAsync(
-                "RetryChunk",
-                [chunkName],
-                GetOptions("RetryChunk", "retry-dispatch-tasks"));
-        }
-        else
-        {
-            await TemporalWorkflow.ExecuteActivityAsync(
-                "WriteHardFail",
-                [chunkName],
-                GetOptions("WriteHardFail", "retry-dispatch-tasks"));
-        }
     }
 
     private ActivityOptions GetOptions(string activityName, string taskQueue) =>

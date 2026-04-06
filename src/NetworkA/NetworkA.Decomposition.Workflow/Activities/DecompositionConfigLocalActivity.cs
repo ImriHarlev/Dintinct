@@ -7,13 +7,11 @@ namespace NetworkA.Decomposition.Workflow.Activities;
 
 public record DecompositionRuntimeConfig(
     WorkflowActivityConfigOptions.WorkflowConfigEntry ActivityConfig,
-    List<ProxyConfiguration> ProxyRules,
-    int MaxRetryCount);
+    List<ProxyConfiguration> ProxyRules);
 
 public class DecompositionConfigLocalActivity(
     IOptions<WorkflowActivityConfigOptions> activityConfig,
-    IOptions<ProxyConfigOptions> proxyConfig,
-    IOptions<RetryPolicyOptions> retryOptions)
+    IOptions<ProxyConfigOptions> proxyConfig)
 {
     [Activity]
     public Task<DecompositionRuntimeConfig> FetchAsync()
@@ -25,7 +23,6 @@ public class DecompositionConfigLocalActivity(
 
         return Task.FromResult(new DecompositionRuntimeConfig(
             ActivityConfig: entry,
-            ProxyRules: proxyConfig.Value.Configurations,
-            MaxRetryCount: retryOptions.Value.MaxRetryCount));
+            ProxyRules: proxyConfig.Value.Configurations));
     }
 }

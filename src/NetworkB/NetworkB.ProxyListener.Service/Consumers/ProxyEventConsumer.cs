@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -14,10 +13,8 @@ namespace NetworkB.ProxyListener.Service.Consumers;
 public class ProxyEventConsumer : IHostedService, IAsyncDisposable
 {
     private readonly ITemporalClient _temporalClient;
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ProxyListenerOptions _listenerOptions;
     private readonly RabbitMqOptions _rabbitMqOptions;
-    private readonly NetworkACallbackOptions _callbackOptions;
     private readonly AssemblyOptions _assemblyOptions;
     private readonly ILogger<ProxyEventConsumer> _logger;
     private IConnection? _connection;
@@ -25,18 +22,14 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
 
     public ProxyEventConsumer(
         ITemporalClient temporalClient,
-        IHttpClientFactory httpClientFactory,
         IOptions<ProxyListenerOptions> listenerOptions,
         IOptions<RabbitMqOptions> rabbitMqOptions,
-        IOptions<NetworkACallbackOptions> callbackOptions,
         IOptions<AssemblyOptions> assemblyOptions,
         ILogger<ProxyEventConsumer> logger)
     {
         _temporalClient = temporalClient;
-        _httpClientFactory = httpClientFactory;
         _listenerOptions = listenerOptions.Value;
         _rabbitMqOptions = rabbitMqOptions.Value;
-        _callbackOptions = callbackOptions.Value;
         _assemblyOptions = assemblyOptions.Value;
         _logger = logger;
     }
@@ -100,35 +93,16 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
             if (fileName.EndsWith(".ERROR.txt", StringComparison.OrdinalIgnoreCase))
             {
                 var chunkName = fileName[..^".ERROR.txt".Length];
-
-                // If a HARDFAIL marker itself failed to transfer, the proxy would retry it and
-                // eventually cascade: HARDFAIL → HARDFAIL.ERROR → retry → HARDFAIL.HARDFAIL → ...
-                // Break the cycle by treating any HARDFAIL transfer failure as a direct hard-fail
-                // signal for the original chunk, without going through Network A's retry machinery.
-                if (chunkName.EndsWith(".HARDFAIL.txt", StringComparison.OrdinalIgnoreCase))
-                {
-                    var originalChunkName = chunkName[..^".HARDFAIL.txt".Length];
-                    _logger.LogWarning(
-                        "HARDFAIL marker transfer failed for {ChunkName}, signalling hard-fail for original chunk {OriginalChunkName}",
-                        chunkName, originalChunkName);
-                    var hardFailSignal = new HardFailSignal(originalChunkName);
-                    await _temporalClient.StartWorkflowAsync(
-                        "AssemblyWorkflow",
-                        [_assemblyOptions.TimeoutMinutes],
-                        new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
-                        {
-                            StartSignal = "HardFail",
-                            StartSignalArgs = [hardFailSignal]
-                        });
-                }
-                else
-                {
-                    _logger.LogInformation("Proxy error for chunk {ChunkName}, sending retry to Network A", chunkName);
-                    var httpClient = _httpClientFactory.CreateClient("NetworkA");
-                    await httpClient.PostAsJsonAsync(
-                        $"{_callbackOptions.CallbackBaseUrl}/api/v1/callbacks/retry",
-                        new { origJobId = jobId, chunkName });
-                }
+                _logger.LogWarning("Proxy error for chunk {ChunkName}, signalling hard-fail directly", chunkName);
+                var hardFailSignal = new HardFailSignal(chunkName);
+                await _temporalClient.StartWorkflowAsync(
+                    "AssemblyWorkflow",
+                    [_assemblyOptions.TimeoutMinutes],
+                    new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
+                    {
+                        StartSignal = "HardFail",
+                        StartSignalArgs = [hardFailSignal]
+                    });
             }
             else if (fileName.EndsWith(".UNSUPPORTED.txt", StringComparison.OrdinalIgnoreCase))
             {
@@ -153,20 +127,6 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
                     new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
                     {
                         StartSignal = "ManifestArrived",
-                        StartSignalArgs = [signal]
-                    });
-            }
-            else if (fileName.EndsWith(".HARDFAIL.txt", StringComparison.OrdinalIgnoreCase))
-            {
-                var chunkName = fileName[..^".HARDFAIL.txt".Length];
-                _logger.LogInformation("Hard fail for chunk {ChunkName}", chunkName);
-                var signal = new HardFailSignal(chunkName);
-                await _temporalClient.StartWorkflowAsync(
-                    "AssemblyWorkflow",
-                    [_assemblyOptions.TimeoutMinutes],
-                    new WorkflowOptions(assemblyWorkflowId, "assembly-workflow")
-                    {
-                        StartSignal = "HardFail",
                         StartSignalArgs = [signal]
                     });
             }
