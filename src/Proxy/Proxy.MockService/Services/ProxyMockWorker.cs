@@ -77,7 +77,7 @@ public class ProxyMockWorker : BackgroundService
                 await Task.Delay(200, stoppingToken);
 
                 _logger.LogInformation("File detected: {FilePath}", filePath);
-                await _transferService.TransferFileAsync(filePath, inbox.OutboxPath, stoppingToken);
+                await _transferService.TransferFileAsync(filePath, inbox, stoppingToken);
             }
             catch (OperationCanceledException)
             {
