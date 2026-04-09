@@ -18,14 +18,10 @@ builder.Services.AddSerilog();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
-builder.Services.Configure<NetworkACallbackOptions>(builder.Configuration.GetSection("NetworkA"));
-builder.Services.AddHttpClient("NetworkA");
-
 builder.Services.AddScoped<ICsvReportWriter, CsvReportWriter>();
 builder.Services.AddKeyedScoped<IAnswerDispatcher, RabbitMqAnswerDispatcher>("RabbitMQ");
 builder.Services.AddKeyedScoped<IAnswerDispatcher, FileSystemAnswerDispatcher>("FileSystem");
 builder.Services.AddScoped<IAnswerDispatcherFactory, AnswerDispatcherFactory>();
-builder.Services.AddScoped<INetworkAClient, NetworkAHttpClient>();
 
 var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 builder.Services.AddTemporalClient(opts =>
@@ -37,8 +33,7 @@ builder.Services.AddTemporalClient(opts =>
 builder.Services
     .AddHostedTemporalWorker(taskQueue: "callback-dispatch-tasks")
     .AddScopedActivities<WriteCsvReportActivities>()
-    .AddScopedActivities<DispatchAnswerActivities>()
-    .AddScopedActivities<UpdateClientAActivities>();
+    .AddScopedActivities<DispatchAnswerActivities>();
 
 var host = builder.Build();
 

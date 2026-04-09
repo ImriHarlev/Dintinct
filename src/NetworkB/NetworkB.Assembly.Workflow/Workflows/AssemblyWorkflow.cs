@@ -1,7 +1,6 @@
 using NetworkB.Assembly.Workflow.Activities;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
-using Shared.Contracts.Payloads;
 using Shared.Contracts.Signals;
 using Shared.Infrastructure.Extensions;
 
@@ -34,14 +33,7 @@ public class AssemblyWorkflow
         await TemporalWorkflow.WaitConditionAsync(() => _manifestReceived || _manifestHardFailed);
 
         if (_manifestHardFailed)
-        {
-            var origJobId = TemporalWorkflow.Info.WorkflowId.Replace("assembly-", "");
-            await TemporalWorkflow.ExecuteActivityAsync(
-                "NotifyManifestFailure",
-                [origJobId],
-                GetOptions("NotifyManifestFailure", "callback-dispatch-tasks"));
             return;
-        }
 
         var blueprint = await TemporalWorkflow.ExecuteActivityAsync<AssemblyBlueprint>(
             "ParseManifest",
@@ -97,15 +89,10 @@ public class AssemblyWorkflow
             [blueprint, fileResults],
             GetOptions("WriteCsvReport", "callback-dispatch-tasks"));
 
-        var payload = await TemporalWorkflow.ExecuteActivityAsync<StatusCallbackPayload>(
+        await TemporalWorkflow.ExecuteActivityAsync(
             "DispatchAnswer",
             [blueprint, fileResults, finalStatus],
             GetOptions("DispatchAnswer", "callback-dispatch-tasks"));
-
-        await TemporalWorkflow.ExecuteActivityAsync(
-            "UpdateClientA",
-            [payload],
-            GetOptions("UpdateClientA", "callback-dispatch-tasks"));
     }
 
     [WorkflowSignal]

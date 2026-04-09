@@ -16,11 +16,9 @@ builder.Services.AddSerilog();
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<ProxyListenerOptions>(builder.Configuration.GetSection("ProxyListener"));
-builder.Services.Configure<NetworkACallbackOptions>(builder.Configuration.GetSection("NetworkA"));
 builder.Services.Configure<AssemblyOptions>(builder.Configuration.GetSection("Assembly"));
 
 builder.Services.AddTemporalClient();
-builder.Services.AddHttpClient("NetworkA");
 
 builder.Services.AddHostedService<ProxyEventConsumer>();
 
