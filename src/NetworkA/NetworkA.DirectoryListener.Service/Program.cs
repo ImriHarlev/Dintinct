@@ -4,6 +4,7 @@ using Serilog;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
+using ZiggyCreatures.Caching.Fusion;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkA.DirectoryListener.Service")
@@ -17,6 +18,8 @@ builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Te
 builder.Services.Configure<DirectoryListenerOptions>(builder.Configuration.GetSection(DirectoryListenerOptions.SectionName));
 
 builder.Services.AddTemporalClient();
+
+builder.Services.AddFusionCache();
 
 builder.Services.AddSingleton<IInputSubmissionService, InputSubmissionService>();
 builder.Services.AddHostedService<DirectoryListenerBackgroundService>();
