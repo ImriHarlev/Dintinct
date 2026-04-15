@@ -75,3 +75,4 @@ appsettings.*.local.json
 *.bak
 temp/
 .$architecture.drawio.bkp
+.$architecture-new.drawio.bkp
