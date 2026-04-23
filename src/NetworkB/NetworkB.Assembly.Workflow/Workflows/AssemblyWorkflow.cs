@@ -48,9 +48,9 @@ public class AssemblyWorkflow
             () => _receivedChunkPaths.Count + _hardFailedChunkNames.Count + _unsupportedChunkNames.Count >= _expectedChunks,
             assemblyTimeout);
 
-        blueprint.ReceivedChunkNames = new HashSet<string>(_receivedChunkPaths.Select(p => Path.GetFileName(p)!));
-        blueprint.HardFailedChunkNames = new HashSet<string>(_hardFailedChunkNames);
-        blueprint.UnsupportedChunkNames = new HashSet<string>(_unsupportedChunkNames);
+        blueprint.ReceivedChunkNames = [.. _receivedChunkPaths.Select(p => Path.GetFileName(p)!)];
+        blueprint.HardFailedChunkNames = [.. _hardFailedChunkNames];
+        blueprint.UnsupportedChunkNames = [.. _unsupportedChunkNames];
 
         var assembleResult = await TemporalWorkflow.ExecuteActivityAsync<AssembleFilesResult>(
             "AssembleFiles",
