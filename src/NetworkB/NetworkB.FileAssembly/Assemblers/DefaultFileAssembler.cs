@@ -1,4 +1,4 @@
-namespace NetworkB.Activities.HeavyAssembly.Assemblers;
+namespace NetworkB.FileAssembly.Assemblers;
 
 public sealed class DefaultFileAssembler : IFileAssembler
 {

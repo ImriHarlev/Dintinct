@@ -1,9 +1,10 @@
 using Aspose.Words;
 using Aspose.Words.Saving;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Shared.Infrastructure.Options;
 
-namespace NetworkA.Activities.HeavyProcessing.Splitters;
+namespace NetworkA.FileProcessing.Splitters;
 
 public sealed class DocxFileSplitter : IFileSplitter
 {
@@ -109,6 +110,15 @@ public sealed class DocxFileSplitter : IFileSplitter
             if (string.IsNullOrWhiteSpace(_asposeOptions.LicensePath))
             {
                 _logger.LogWarning("Aspose license path is not configured. Continuing without loading a license.");
+                _licenseConfigured = true;
+                return;
+            }
+
+            if (!File.Exists(_asposeOptions.LicensePath))
+            {
+                _logger.LogWarning(
+                    "Aspose license file not found at {LicensePath}. Continuing without a license.",
+                    _asposeOptions.LicensePath);
                 _licenseConfigured = true;
                 return;
             }

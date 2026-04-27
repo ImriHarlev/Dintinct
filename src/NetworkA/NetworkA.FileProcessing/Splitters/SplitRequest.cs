@@ -1,4 +1,4 @@
-namespace NetworkA.Activities.HeavyProcessing.Splitters;
+namespace NetworkA.FileProcessing.Splitters;
 
 public sealed record SplitRequest(
     string SourceFilePath,
