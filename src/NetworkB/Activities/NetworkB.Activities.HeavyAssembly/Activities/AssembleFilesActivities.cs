@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
-using NetworkB.Activities.HeavyAssembly.Assemblers;
+using NetworkB.FileAssembly.Assemblers;
 using Shared.Contracts.Enums;
 using Shared.Contracts.Models;
 using Temporalio.Activities;

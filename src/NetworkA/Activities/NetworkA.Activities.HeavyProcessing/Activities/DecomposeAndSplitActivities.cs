@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NetworkA.Activities.HeavyProcessing.Splitters;
+using NetworkA.FileProcessing.Splitters;
 using Shared.Contracts.Models;
 using Shared.Infrastructure.Options;
 using Temporalio.Activities;

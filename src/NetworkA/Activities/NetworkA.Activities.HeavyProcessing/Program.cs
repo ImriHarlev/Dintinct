@@ -1,5 +1,5 @@
 using NetworkA.Activities.HeavyProcessing.Activities;
-using NetworkA.Activities.HeavyProcessing.Splitters;
+using NetworkA.FileProcessing.Extensions;
 using Serilog;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
@@ -16,9 +16,8 @@ builder.Services.AddSerilog();
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<AsposeOptions>(builder.Configuration.GetSection("Splitters:docx:Aspose"));
-builder.Services.AddScoped<FileSplitterFactory>();
-builder.Services.AddScoped<DefaultFileSplitter>();
-builder.Services.AddScoped<IFileSplitter, DocxFileSplitter>();
+builder.Services.AddFileSplitters();
+builder.Services.AddFileConverters();
 
 var temporalOpts = builder.Configuration.GetSection("Temporal").Get<TemporalOptions>() ?? new TemporalOptions();
 builder.Services.AddTemporalClient(opts =>
@@ -34,7 +33,6 @@ builder.Services
 
 var host = builder.Build();
 
-// Log Temporal worker registration (FR-021, SC-002)
 using (var scope = host.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();

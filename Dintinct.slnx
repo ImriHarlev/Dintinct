@@ -2,6 +2,7 @@
   <Folder Name="/src/" />
   <Folder Name="/src/NetworkA/">
     <Project Path="src/NetworkA/NetworkA.Decomposition.Workflow/NetworkA.Decomposition.Workflow.csproj" />
+    <Project Path="src/NetworkA/NetworkA.FileProcessing/NetworkA.FileProcessing.csproj" />
   </Folder>
   <Folder Name="/src/NetworkA/Activities/">
     <Project Path="src/NetworkA/Activities/NetworkA.Activities.HeavyProcessing/NetworkA.Activities.HeavyProcessing.csproj" />
@@ -13,6 +14,7 @@
   </Folder>
   <Folder Name="/src/NetworkB/">
     <Project Path="src/NetworkB/NetworkB.Assembly.Workflow/NetworkB.Assembly.Workflow.csproj" />
+    <Project Path="src/NetworkB/NetworkB.FileAssembly/NetworkB.FileAssembly.csproj" />
     <Project Path="src/NetworkB/NetworkB.ProxyListener.Service/NetworkB.ProxyListener.Service.csproj" />
   </Folder>
   <Folder Name="/src/NetworkB/Activities/">
