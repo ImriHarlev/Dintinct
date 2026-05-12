@@ -1,6 +1,7 @@
 using NetworkB.Assembly.Workflow.Activities;
 using NetworkB.Assembly.Workflow.Workflows;
 using Serilog;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
@@ -8,6 +9,7 @@ using Temporalio.Extensions.Hosting;
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkB.Assembly.Workflow")
     .WriteTo.Console()
+    .WithFileLogging("NetworkB.Assembly.Workflow")
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

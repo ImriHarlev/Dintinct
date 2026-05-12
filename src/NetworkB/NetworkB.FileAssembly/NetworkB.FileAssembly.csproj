@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <PackageReference Include="Aspose.Words" Version="24.11.0" />
+    <PackageReference Include="FFMpegCore" Version="5.4.0" />
+    <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="14.13.0" />
   </ItemGroup>
 
   <ItemGroup>

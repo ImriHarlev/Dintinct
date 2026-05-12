@@ -100,15 +100,24 @@ public class AssembleFilesActivities
                 continue;
             }
 
-            var outputPath = Path.Combine(assemblyDir, file.OriginalRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var convertedExt = Path.GetExtension(primaryConvertedFile.ConvertedRelativePath).TrimStart('.');
+
+            // For media files converted to MP4, write the output under the converted filename
+            // (e.g. video.mp4) and resolve the correct MediaAssembler. All other formats
+            // (images, documents, pass-through files) continue to use the original name and format.
+            var isMediaConversion = convertedExt.Equals("mp4", StringComparison.OrdinalIgnoreCase);
+            var outputRelativePath = isMediaConversion
+                ? primaryConvertedFile.ConvertedRelativePath
+                : file.OriginalRelativePath;
+            var assemblyFormat = isMediaConversion ? convertedExt : file.OriginalFormat;
+
+            var outputPath = Path.Combine(assemblyDir, outputRelativePath.Replace('/', Path.DirectorySeparatorChar));
             var outputDir = Path.GetDirectoryName(outputPath);
             if (outputDir is not null)
-            {
                 Directory.CreateDirectory(outputDir);
-            }
 
-            var assembler = _assemblerFactory.GetAssembler(file.OriginalFormat);
-            await assembler.AssembleAsync(new AssemblyRequest(file.OriginalFormat, outputPath, assembledChunks));
+            var assembler = _assemblerFactory.GetAssembler(assemblyFormat);
+            await assembler.AssembleAsync(new AssemblyRequest(assemblyFormat, outputPath, assembledChunks));
 
             results.Add(new FileResult(FileTransferStatus.Completed, file.OriginalRelativePath));
         }

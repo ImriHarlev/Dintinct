@@ -1,11 +1,13 @@
 using Proxy.MockService.Options;
 using Proxy.MockService.Services;
 using Serilog;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "Proxy.MockService")
     .WriteTo.Console()
+    .WithFileLogging("Proxy.MockService")
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

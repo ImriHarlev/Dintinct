@@ -4,6 +4,7 @@ using NetworkB.Activities.Reporting.Services;
 using Serilog;
 using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Extensions;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
@@ -11,6 +12,7 @@ using Temporalio.Extensions.Hosting;
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkB.Activities.Reporting")
     .WriteTo.Console()
+    .WithFileLogging("NetworkB.Activities.Reporting")
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

@@ -1,6 +1,7 @@
 using NetworkA.Decomposition.Workflow.Activities;
 using NetworkA.Decomposition.Workflow.Workflows;
 using Serilog;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
@@ -8,6 +9,7 @@ using Temporalio.Extensions.Hosting;
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkA.Decomposition.Workflow")
     .WriteTo.Console()
+    .WithFileLogging("NetworkA.Decomposition.Workflow")
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

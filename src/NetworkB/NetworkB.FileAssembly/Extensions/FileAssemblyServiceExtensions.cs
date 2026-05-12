@@ -10,6 +10,8 @@ public static class FileAssemblyServiceExtensions
     {
         services.AddScoped<DefaultFileAssembler>();
         services.AddScoped<IFileAssembler, DocsAssembler>();
+        services.AddScoped<IFileAssembler, ImageAssembler>();
+        services.AddScoped<IFileAssembler, MediaAssembler>();
         services.AddScoped<FileAssemblerFactory>();
         return services;
     }

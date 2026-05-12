@@ -2,6 +2,7 @@ using NetworkA.DirectoryListener.Service.Options;
 using NetworkA.DirectoryListener.Service.Services;
 using Serilog;
 using Shared.Infrastructure.Extensions;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using ZiggyCreatures.Caching.Fusion;
@@ -9,6 +10,7 @@ using ZiggyCreatures.Caching.Fusion;
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkA.DirectoryListener.Service")
     .WriteTo.Console()
+    .WithFileLogging("NetworkA.DirectoryListener.Service")
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);

@@ -3,11 +3,13 @@ using NetworkB.ProxyListener.Service.Options;
 using Serilog;
 using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Extensions;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithProperty("Service", "NetworkB.ProxyListener.Service")
     .WriteTo.Console()
+    .WithFileLogging("NetworkB.ProxyListener.Service")
     .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);
