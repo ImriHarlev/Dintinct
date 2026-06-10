@@ -1,0 +1,304 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
+  <diagram id="chunk-flow" name="Chunk Processing Flow">
+    <mxGraphModel dx="2291" dy="1187" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="s1" value="① Chunk BEFORE file-manifest" style="swimlane;html=1;fontStyle=1;fontSize=12;startSize=35;fillColor=#ffe6cc;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="10" y="10" width="370" height="870" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_1" value="Proxy Rabbit msg&lt;br&gt;filePath: {job_id}_{sf_id}_chunk_0.bin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s1" vertex="1">
+          <mxGeometry x="20" y="55" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_2" value="ProxyListener&lt;br&gt;SELECT expected_chunk WHERE name=$chunk_name&lt;br&gt;&lt;b&gt;0 rows&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s1" vertex="1">
+          <mxGeometry x="20" y="135" width="330" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_e1" style="edgeStyle=orthogonalEdgeStyle;" parent="s1" source="s1_1" target="s1_2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_3" value="INSERT inbox(&lt;br&gt;  kind=&#39;Chunk&#39;, job_id=$id,&lt;br&gt;  &lt;b&gt;published=FALSE&lt;/b&gt;&lt;br&gt;) ON CONFLICT DO NOTHING&lt;br&gt;No outbox row.&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s1" vertex="1">
+          <mxGeometry x="20" y="225" width="330" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_e2" style="edgeStyle=orthogonalEdgeStyle;" parent="s1" source="s1_2" target="s1_3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_4" value="File stays at proxy delivery dir.&lt;br&gt;No copy. No queue message." style="shape=mxgraph.flowchart.stored_data;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s1" vertex="1">
+          <mxGeometry x="20" y="355" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_e3" style="edgeStyle=orthogonalEdgeStyle;" parent="s1" source="s1_3" target="s1_4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_5" value="BUFFERED&lt;br&gt;published=FALSE&lt;br&gt;waiting for file-manifest..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;" parent="s1" vertex="1">
+          <mxGeometry x="20" y="440" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_e4" style="edgeStyle=orthogonalEdgeStyle;" parent="s1" source="s1_4" target="s1_5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_6" value="After ③ drain:&lt;br&gt;• received_at SET&lt;br&gt;• published=TRUE&lt;br&gt;• received_chunk_count++&lt;br&gt;• complete? → files.assembled" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s1" vertex="1">
+          <mxGeometry x="20" y="570" width="330" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="② Job Header arrival" style="swimlane;html=1;fontStyle=1;fontSize=12;startSize=35;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="390" y="10" width="380" height="870" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_1" value="Proxy Rabbit msg&lt;br&gt;filePath: {job_id}.job.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="55" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_2" value="ProxyListener&lt;br&gt;INSERT inbox(kind=&#39;JobHeader&#39;, published=TRUE)&lt;br&gt;INSERT outbox(job-headers.received)&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="135" width="330" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e1" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_1" target="s2_2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_3" value="Assembly.Worker consumes&lt;br&gt;job-headers.received" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="230" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e2" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_2" target="s2_3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_4" value="INSERT job(status=&#39;Awaiting&#39;,&lt;br&gt;  expected_file_count=$totalSourceFiles,&lt;br&gt;  job_header_received_at=now())&lt;br&gt;ON CONFLICT DO NOTHING" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="310" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e3" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_3" target="s2_4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_d1" value="Buffered FileManifests&lt;br&gt;for this job_id?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="95" y="410" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e4" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_4" target="s2_d1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_5" value="&lt;b&gt;Drain in batches (≤500/tx, loop until empty):&lt;/b&gt;&lt;br&gt;Drain inbox FileManifest rows →&lt;br&gt;read each file-manifest JSON →&lt;br&gt;INSERT expected_file + expected_chunk&lt;br&gt;(ON CONFLICT DO NOTHING)&lt;br&gt;&lt;b&gt;Also drain FileManifestError rows →&lt;/b&gt;&lt;br&gt;INSERT expected_file(Failed) + outbox(files.finalized)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="510" width="330" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e5" style="edgeStyle=orthogonalEdgeStyle;entryX=0.5;entryY=1;exitX=0.5;exitY=1;" parent="s2" source="s2_d1" target="s2_5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_lbl_yes" value="YES" style="text;html=1;fontSize=9;fontStyle=1;" parent="s2" vertex="1">
+          <mxGeometry x="192" y="484" width="30" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_6" value="Drain buffered Chunks&lt;br&gt;matching expected_chunks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="620" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e6" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_5" target="s2_6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_7" value="Concat complete files&lt;br&gt;INSERT outbox(files.assembled)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="700" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e7" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_6" target="s2_7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_8" value="UPDATE job SET status=&#39;Assembling&#39;&lt;br&gt;WHERE status=&#39;Awaiting&#39;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="s2" vertex="1">
+          <mxGeometry x="25" y="780" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_e8" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_7" target="s2_8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_note" value="Delayed job-header → many buffered&lt;br&gt;rows. Job row committed first, then&lt;br&gt;drain in BOUNDED BATCHES&lt;br&gt;(DRAIN_BATCH=500/tx), loop until&lt;br&gt;empty. Locks bounded per batch;&lt;br&gt;resumes idempotently on redelivery." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=9;fontStyle=2;" parent="s2" vertex="1">
+          <mxGeometry x="240" y="400" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="③ File-manifest arrival + inline drain" style="swimlane;html=1;fontStyle=1;fontSize=12;startSize=35;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="790" y="10" width="500" height="870" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_1" value="Proxy Rabbit msg&lt;br&gt;filePath: {job_id}_{sf_id}.file.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="55" width="380" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_2" value="ProxyListener&lt;br&gt;SELECT job WHERE id=$job_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="135" width="380" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e1" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_1" target="s3_2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_3a" value="INSERT inbox(kind=&#39;FileManifest&#39;, published=TRUE)&lt;br&gt;INSERT outbox(file-manifests.received)&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s3" vertex="1">
+          <mxGeometry x="200" y="225" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_lbl_exists" value="EXISTS" style="text;html=1;fontSize=9;fontStyle=1;" parent="s3" vertex="1">
+          <mxGeometry x="295" y="190" width="45" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_3b" value="INSERT inbox(kind=&#39;FileManifest&#39;,&lt;br&gt;  job_id, &lt;b&gt;published=FALSE&lt;/b&gt;)&lt;br&gt;No outbox row.&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="225" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_lbl_no" value="NO row" style="text;html=1;fontSize=9;fontStyle=1;" parent="s3" vertex="1">
+          <mxGeometry x="30" y="190" width="45" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_buf" value="BUFFERED&lt;br&gt;waiting for job header..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="325" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_ebuf" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_3b" target="s3_buf" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e2a" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" parent="s3" source="s3_2" target="s3_3a" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e2b" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" parent="s3" source="s3_2" target="s3_3b" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_4" value="Assembly.Worker consumes&lt;br&gt;file-manifests.received" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s3" vertex="1">
+          <mxGeometry x="200" y="325" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e3" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_3a" target="s3_4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_5" value="Read file-manifest JSON from disk&lt;br&gt;INSERT expected_file(status=&#39;Pending&#39;, expected_chunk_count=N)&lt;br&gt;INSERT expected_chunk rows&lt;br&gt;ON CONFLICT DO NOTHING" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="410" width="380" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e4" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_4" target="s3_5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_6" value="&lt;b&gt;INLINE DRAIN:&lt;/b&gt;&lt;br&gt;UPDATE expected_chunk ec SET received_at=i.received_at&lt;br&gt;FROM inbox i&lt;br&gt;WHERE i.kind=&#39;Chunk&#39; AND i.published=FALSE&lt;br&gt;AND ec.name=filename(i.file_path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="515" width="380" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e5" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_5" target="s3_6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_7" value="UPDATE inbox SET published=TRUE&lt;br&gt;WHERE kind=&#39;Chunk&#39; AND published=FALSE&lt;br&gt;(for drained rows)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="625" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e6" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_6" target="s3_7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_8" value="Recompute received_chunk_count&lt;br&gt;flip status=&#39;Assembled&#39; if complete" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s3" vertex="1">
+          <mxGeometry x="20" y="715" width="380" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e7" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_7" target="s3_8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_d1" value="Any file&lt;br&gt;Assembled?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s3" vertex="1">
+          <mxGeometry x="155" y="790" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e8" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_8" target="s3_d1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_9" value="Read chunks from proxy delivery dir&lt;br&gt;concat → work/{job_id}/assembled/{file_id}.bin&lt;br&gt;(.tmp + rename)&lt;br&gt;INSERT outbox(files.assembled)&lt;br&gt;UPDATE job SET status=&#39;Assembling&#39;&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s3" vertex="1">
+          <mxGeometry x="330" y="772.5" width="160" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_e9" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" parent="s3" source="s3_d1" target="s3_9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_lbl_yes" value="YES" style="text;html=1;fontSize=9;fontStyle=1;" parent="s3" vertex="1">
+          <mxGeometry x="264" y="810" width="30" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="④ Chunk AFTER file-manifest" style="swimlane;html=1;fontStyle=1;fontSize=12;startSize=35;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="1320" y="10" width="390" height="870" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_1" value="Proxy Rabbit msg&lt;br&gt;filePath: {job_id}_{sf_id}_chunk_0.bin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="55" width="350" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_2" value="ProxyListener&lt;br&gt;SELECT expected_chunk WHERE name=$chunk_name&lt;br&gt;&lt;b&gt;found&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="135" width="350" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e1" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_1" target="s4_2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_3" value="INSERT inbox(kind=&#39;Chunk&#39;, &lt;b&gt;published=TRUE&lt;/b&gt;)&lt;br&gt;INSERT outbox(chunks.received)&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="225" width="350" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e2" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_2" target="s4_3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_4" value="Assembly.Worker consumes chunks.received" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="315" width="350" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e3" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_3" target="s4_4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_5" value="UPDATE expected_chunk SET received_at=now()&lt;br&gt;WHERE name=$name AND received_at IS NULL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="395" width="350" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e4" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_4" target="s4_5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_6" value="UPDATE expected_file&lt;br&gt;SET received_chunk_count = received_chunk_count + 1,&lt;br&gt;status = CASE WHEN count+1=expected THEN &#39;Assembled&#39; ELSE status END&lt;br&gt;WHERE status=&#39;Pending&#39;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="480" width="350" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e5" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_5" target="s4_6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_d1" value="Status flipped&lt;br&gt;to Assembled?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s4" vertex="1">
+          <mxGeometry x="115" y="590" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e6" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_6" target="s4_d1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_7" value="Read chunks from proxy delivery dir (in-place)&lt;br&gt;concat → work/{job_id}/assembled/{file_id}.bin&lt;br&gt;INSERT outbox(files.assembled)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="695" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e7" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="s4" source="s4_d1" target="s4_7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_lbl_yes" value="YES" style="text;html=1;fontSize=9;fontStyle=1;" parent="s4" vertex="1">
+          <mxGeometry x="192" y="665" width="30" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_8" value="COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" parent="s4" vertex="1">
+          <mxGeometry x="20" y="795" width="350" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s4_e8" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_7" target="s4_8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="⑤ ERROR sentinels" style="swimlane;html=1;fontStyle=1;fontSize=12;startSize=35;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+          <mxGeometry x="1730" y="10" width="400" height="870" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_la" value="Sub-flow A — File-manifest ERROR" style="text;html=1;fontSize=10;fontStyle=3;align=left;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="45" width="380" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_a1" value="Proxy: {job_id}_{sf_id}.file.ERROR.txt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="70" width="380" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_a2" value="ProxyListener kind=&#39;FileManifestError&#39;&lt;br&gt;SELECT 1 FROM job WHERE id=$job_id&lt;br&gt;&lt;b&gt;⑥a job row exists:&lt;/b&gt;&lt;br&gt;  INSERT inbox(published=TRUE)&lt;br&gt;  INSERT outbox(file-manifest-errors.received)&lt;br&gt;&lt;b&gt;⑥b no job row (buffer):&lt;/b&gt;&lt;br&gt;  INSERT inbox(published=FALSE). No outbox.&lt;br&gt;  → drained by ② job-header handler&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="135" width="380" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_ea1" style="edgeStyle=orthogonalEdgeStyle;" parent="s5" source="s5_a1" target="s5_a2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_a3" value="Assembly.Worker&lt;br&gt;INSERT expected_file(&lt;br&gt;  status=&#39;Failed&#39;, expected_chunk_count=0,&lt;br&gt;  failure_reason=&#39;ProxyDeliveryFailure&#39;)&lt;br&gt;INSERT outbox(files.finalized, status=&#39;Failed&#39;)&lt;br&gt;(via ⑥a, or via ② drain once job row exists)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="280" width="380" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_ea2" style="edgeStyle=orthogonalEdgeStyle;" parent="s5" source="s5_a2" target="s5_a3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_a4" value="Reporter handles normally&lt;br&gt;finalized_file_count++" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="380" width="380" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_ea3" style="edgeStyle=orthogonalEdgeStyle;" parent="s5" source="s5_a3" target="s5_a4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_sep" value="" style="line;html=1;strokeColor=#b85450;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="440" width="380" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_lb" value="Sub-flow B — Job header ERROR" style="text;html=1;fontSize=10;fontStyle=3;align=left;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="455" width="380" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_b1" value="Proxy: {job_id}.job.ERROR.txt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="480" width="380" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_b2" value="ProxyListener&lt;br&gt;kind=&#39;JobHeaderError&#39;&lt;br&gt;INSERT inbox(published=TRUE)&lt;br&gt;Audit only. No outbox.&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="555" width="380" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_eb1" style="edgeStyle=orthogonalEdgeStyle;" parent="s5" source="s5_b1" target="s5_b2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_b3" value="Cannot recover — no job metadata.&lt;br&gt;No job row → TimeoutSweeper never sees it.&lt;br&gt;Stranded inbox rows (JobHeaderError +&lt;br&gt;any buffered rows for this job) reaped by&lt;br&gt;age-based inbox-cleanup cron (§6.6, N days)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" parent="s5" vertex="1">
+          <mxGeometry x="10" y="655" width="380" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="s5_eb2" style="edgeStyle=orthogonalEdgeStyle;" parent="s5" source="s5_b2" target="s5_b3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inplace_banner" value="Chunks are NEVER copied to work dir. expected_chunk.name resolves against proxy delivery dir. Assembly reads chunks IN-PLACE during concat. Reporter deletes proxy chunks on terminal job." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;align=center;" parent="1" vertex="1">
+          <mxGeometry x="10" y="895" width="1590" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="result" value="files.assembled → ReverseConverter.Worker (pure reverse-convert, reads work/.../assembled/*.bin) → files.finalized → Reporter.Worker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="10" y="945" width="1590" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="drain_arrow" value="reads buffered rows" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;strokeColor=#d79b00;strokeWidth=2;fontSize=10;fontStyle=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="s3_6" target="s1_5" edge="1">
+          <mxGeometry x="0.3282" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="760" y="565" />
+              <mxPoint x="760" y="480" />
+            </Array>
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
