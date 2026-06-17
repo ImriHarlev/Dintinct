@@ -37,8 +37,8 @@ calling_system_config (
   calling_system_id    TEXT PRIMARY KEY,   -- literal 'default' row is the fallback
   data_outbox_path     TEXT NULL,          -- A: per-caller proxy data outbox dir   (NULL → use 'default' row)
   manifest_outbox_path TEXT NULL,          -- A: per-caller proxy manifest outbox dir
-  sla_minutes          INT NOT NULL DEFAULT 30   -- job-level SLA (A: §3.7).  Independent of Network B's table.
-  -- priority         INT NULL  -- DEFERRED: RabbitMQ 3.13 quorum has no message priority (QUESTIONS §21); reserved column.
+  sla_minutes          INT NOT NULL DEFAULT 30,  -- job-level SLA (A: §3.7).  Independent of Network B's table.
+  priority             SMALLINT NOT NULL DEFAULT 4  -- RabbitMQ message priority 0–31 (4.x quorum: 32 strict levels, higher first; broker default 4). Snapshotted to job.priority at ingestion.
 );
 ```
 
@@ -96,6 +96,7 @@ job (
   original_package_name TEXT,
   total_source_files    INT,                -- set after Prepare
   files_manifest_written_count INT NOT NULL DEFAULT 0,   -- atomic counter; the sole AllManifestsWritten gate
+  priority              SMALLINT NOT NULL DEFAULT 4,   -- 0–31; snapshotted from calling_system_config at ingestion; copied to every outbox row
   status                TEXT,              -- Created | Prepared | AllManifestsWritten | Failed  (done-states only)
   created_at            TIMESTAMPTZ,
   updated_at            TIMESTAMPTZ
@@ -181,6 +182,7 @@ outbox (
   id           BIGSERIAL PRIMARY KEY,   -- FIFO ordering for relay
   queue        TEXT NOT NULL,
   payload      JSONB NOT NULL,
+  priority     SMALLINT NOT NULL DEFAULT 4,  -- 0–31; copied from job.priority; OutboxRelay sets it as the AMQP message priority (4.x quorum: 32 strict levels)
   published_at TIMESTAMPTZ NULL,        -- NULL = pending; set after publisher-confirm
   created_at   TIMESTAMPTZ DEFAULT now()
 );
@@ -189,7 +191,7 @@ CREATE INDEX outbox_pending ON outbox(id) WHERE published_at IS NULL;
 
 Relay query (every ~500ms):
 ```sql
-SELECT id, queue, payload
+SELECT id, queue, payload, priority
   FROM outbox
  WHERE published_at IS NULL
  ORDER BY id
@@ -215,8 +217,8 @@ Per-`callingSystemId` SLA/timeout with a `default` fallback. Network B holds **n
 calling_system_config (
   calling_system_id      TEXT PRIMARY KEY,   -- literal 'default' row is the fallback
   sla_minutes            INT NOT NULL DEFAULT 30,   -- job-level SLA (§5.7); independent of Network A's table
-  report_pending_minutes INT NOT NULL DEFAULT 5     -- ReportPendingSweeper stuck-row threshold (§5.6)
-  -- priority           INT NULL  -- DEFERRED (QUESTIONS §21); reserved column.
+  report_pending_minutes INT NOT NULL DEFAULT 5,    -- ReportPendingSweeper stuck-row threshold (§5.6)
+  priority               SMALLINT NOT NULL DEFAULT 4  -- RabbitMQ message priority 0–31 (32 strict levels; broker default 4); snapshotted to job.priority when the job row is created from the header. Keep aligned with A.
 );
 ```
 
@@ -242,6 +244,7 @@ job (
   job_header_received_at TIMESTAMPTZ NULL,
   expected_file_count   INT NULL,
   finalized_file_count  INT DEFAULT 0,
+  priority              SMALLINT NOT NULL DEFAULT 4,   -- 0–31; resolved from B's calling_system_config when the job row is created from the header; copied to every outbox row
   status                TEXT,              -- Awaiting | Assembling | ReportPending | Done | PartiallyDone | Failed | TimedOut
                                            -- Assembling/ReportPending are counter/sweeper-driven lifecycle states, not per-worker claims
   callback_sent_at      TIMESTAMPTZ NULL,
@@ -361,4 +364,4 @@ Same structure as Network A `outbox`.
 - **No `manifest_written` flag.** The `source_file.status` done-CAS (`Converted→Split` / terminal-`Failed`) is itself the exactly-once gate for the `files_manifest_written_count` increment — a redelivery or concurrent duplicate loses the CAS and does not double-count.
 - **Per-`callingSystemId` config with `default` fallback.** Caller-varying settings live in `conversion_rule` (A only: `(callingSystemId, source_format)` → forward/reverse conversion + split size limit) and `calling_system_config` (both networks: folders + SLA). Resolution precedence in ARCHITECTURE.md §6.1. Convert.Worker snapshots the resolved rule onto `source_file` (frozen for the job).
 - **Reverse conversion carried via mini-manifest, not derived on B.** `reverse_conversion` is an independent per-`(callingSystemId, source_format)` target resolved on A (may be NULL=skip, equal the source format, or a different type). It is written to the mini-manifest and persisted on `expected_file`; Network B keeps **no** conversion config. Replaces the old "reverse = inverse of `applied_conversion`" rule.
-- **Job priority deferred.** RabbitMQ 3.13 quorum queues have no native message priority (4.0 only); priority is out of scope pending a 4.x upgrade (QUESTIONS §21). `calling_system_config` reserves a `priority` column on both networks.
+- **Job priority enabled (RabbitMQ 4.3).** `calling_system_config.priority` (both networks, default fallback) → snapshot `job.priority` → copied to `outbox.priority` → OutboxRelay sets the AMQP message priority on publish. 4.x quorum queues honor native message priority — **32 strict levels (0–31)**, higher dispatched first, always enabled (`x-max-priority` ignored), broker default 4. Strict (no fairness) → sustained high-priority load can starve lower levels. Priority is independent per network (like SLA); no priority-lane queues (QUESTIONS §20/§21).

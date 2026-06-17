@@ -285,7 +285,7 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 - **Network partition / hard kill** → AMQP connection heartbeat detects it → **~60s**. (No tuning needed.)
 - **App deadlock / infinite loop (connection still alive)** → the broker waits `consumer_timeout`, then closes the channel and requeues → **up to `consumer_timeout`** (RabbitMQ default **30 min**). This is the only knob.
 
-`consumer_timeout` must be set **above the longest legitimate single-message processing time** of any phase — otherwise a healthy-but-slow step is killed mid-work, requeued, and (after the `delivery-limit`, which we set to 20 — RabbitMQ 3.13 has no default) false-dead-lettered. So it is bounded below by max step time and above by acceptable deadlock-recovery latency.
+`consumer_timeout` must be set **above the longest legitimate single-message processing time** of any phase — otherwise a healthy-but-slow step is killed mid-work, requeued, and (after the `delivery-limit`, 20 — the 4.x default, pinned via policy) false-dead-lettered. So it is bounded below by max step time and above by acceptable deadlock-recovery latency.
 
 **Crisp questions:**
 1. **Max single-file processing time per phase** — the slowest a single source file can take to Prepare/Convert/Split (A) and Assemble/Reverse-convert (B). A rough p99 + worst-case ceiling is enough. (We can also measure this from the per-step duration histogram after ~1 week of real traffic — see §8 files-per-job, which drives file sizes.)
@@ -299,20 +299,21 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 | Max step time **> job SLA** (a single file can take longer than the 30-min §2 SLA) | The **SLA is mis-set**, independent of recovery design — must raise the SLA or split the work. Surface before launch. |
 | A specific long phase needs **faster-than-`consumer_timeout`** reclaim | Re-introduce a per-row heartbeat + single-replica sweeper **for that one phase** via `phase_config` (the escape hatch). Localized, not global. |
 
-**Default if unanswered:** ship with `consumer_timeout=30min` (RabbitMQ default), `prefetch=1`, quorum `delivery-limit=20` (set explicitly via policy — no default on 3.13), **plus the client-side watchdog** (see §20) which reclaims a hung worker in seconds; calibrate from the per-step duration histogram post-launch. Safe — the job-level `TimeoutSweeper` (B, §2 SLA) and `TimeoutSweeper-A` (ARCHITECTURE.md §3.7) backstop any worker that never recovers.
+**Default if unanswered:** ship with `consumer_timeout=30min` (RabbitMQ default), `prefetch=1`, quorum `delivery-limit=20` (4.x default; pinned explicitly via policy), **plus the client-side watchdog** (see §20) which reclaims a hung worker in seconds; calibrate from the per-step duration histogram post-launch. Safe — the job-level `TimeoutSweeper` (B, §2 SLA) and `TimeoutSweeper-A` (ARCHITECTURE.md §3.7) backstop any worker that never recovers.
 
 ---
 
-## 20. RabbitMQ version & queue type  &nbsp;✅ ANSWERED — RabbitMQ 3.13, quorum queues  ·  ⏳ topology sub-item open (3-node vs single-node)
+## 20. RabbitMQ version & queue type  &nbsp;✅ ANSWERED — RabbitMQ 4.3, quorum queues  ·  ⏳ topology sub-item open (3-node vs single-node)
 
-> **Client answer (2026-06-17):** RabbitMQ **3.13**, **quorum queues**. **Applied:** quorum is the only queue type — all classic-queue fallback content removed from the architecture. PostgreSQL pinned to **16** in the same decision. The three backstops the recovery design uses are all available on 3.13 quorum queues (`consumer_timeout`, `delivery-limit`, `dead-letter-strategy=at-least-once`), with the version-specific configuration notes below.
+> **Client answer (2026-06-17, revised):** RabbitMQ **4.3**, **quorum queues**. *(Supersedes the earlier 3.13 pin — the client chose to upgrade to 4.x specifically to get native quorum **message priority** for per-`callingSystemId` job priority, see §21.)* **Applied:** quorum is the only queue type; all classic-queue content removed. PostgreSQL stays at **16**. All backstops the recovery design uses are available on 4.x quorum queues (`consumer_timeout`, `delivery-limit`, `dead-letter-strategy=at-least-once`) **plus native message priority**.
 
-**RabbitMQ 3.13 quorum specifics (verified against the 3.13 docs):**
+**RabbitMQ 4.3 quorum specifics:**
 
 - **`consumer_timeout`** — enforced on quorum queues; default **30 min**, evaluated at 1-minute intervals. The client-side watchdog (ARCHITECTURE.md §3.3) reclaims a hung worker faster and is the primary defense; `consumer_timeout` is the coarse broker backstop.
-- **`delivery-limit`** — **RabbitMQ 3.13 has NO default** (the default of 20 only arrives in 4.0). It **must be set explicitly via policy** — we set **20**. Without it, a poison message loops indefinitely at the broker (the app-level `max_retries=5` counter still bounds it, but never rely on a broker default that does not exist on 3.13).
-- **`dead-letter-strategy=at-least-once`** — supported on 3.13, but **requires** the queue also use `overflow=reject-publish` (it does **not** work with the default `drop-head`) **and** a configured dead-letter-exchange. Both are already set by this topology, so DLX re-publishes use publisher confirms internally → no silent message loss.
-- **Mirrored classic queues** — deprecated in 3.13, removed in 4.0. Not used.
+- **`delivery-limit`** — **defaults to 20 on 4.x**. We keep **20** and still set it **explicitly via policy** (clarity + pinned across upgrades). It is the broker poison backstop, parallel to the app-level `max_retries=5`.
+- **`dead-letter-strategy=at-least-once`** — on 4.x **requires** the queue also use `overflow=reject-publish` (it does **not** work with the default `drop-head`) **and** a configured dead-letter-exchange. Both are already set by this topology, so DLX re-publishes use publisher confirms internally → no silent message loss.
+- **Message priority** — quorum queues support it natively on 4.x with **32 strict priority levels (0–31)**, always enabled (`x-max-priority` is ignored — it applies only to classic queues; classic queues go up to 255). A message with no `priority` property defaults to **4**. Priority is **strict** (higher always dispatched ahead of lower — no fairness), so sustained high-priority traffic can starve lower levels. This is what powers per-`callingSystemId` priority (§21) with **no priority-lane topology**.
+- **Classic queue mirroring** — removed in 4.0. Not used.
 
 **Remaining open sub-item — cluster size (recommend 3-node):**
 
@@ -327,9 +328,9 @@ Quorum queues only deliver their data-safety/HA guarantee on a **3-node (odd-siz
 
 ---
 
-## 21. Per-`callingSystemId` configuration, reverse conversion & priority  &nbsp;✅ ANSWERED (2026-06-17) — config model set · ⏳ priority deferred to RabbitMQ 4.x
+## 21. Per-`callingSystemId` configuration, reverse conversion & priority  &nbsp;✅ ANSWERED (2026-06-17) — config model + priority both set
 
-> **Client answer (2026-06-17):** All caller-varying configuration is keyed by `callingSystemId` with a `default` fallback. The proxy/processing config lives on **Network A** and the **reverse-conversion instruction is carried to Network B via the mini-manifest** (B holds no conversion config). SLA/timeout is an **independent table per network**. **Priority is deferred** — the client will discuss a RabbitMQ **4.x** upgrade first (3.13 quorum queues have no native message priority).
+> **Client answer (2026-06-17):** All caller-varying configuration is keyed by `callingSystemId` with a `default` fallback. The proxy/processing config lives on **Network A** and the **reverse-conversion instruction is carried to Network B via the mini-manifest** (B holds no conversion config). SLA/timeout is an **independent table per network**. **Priority: ENABLED** — the client chose to upgrade to **RabbitMQ 4.3** (§20) so per-`callingSystemId` job priority uses the broker's native quorum message priority.
 
 **What is per-`callingSystemId` (with `default` fallback):**
 
@@ -349,13 +350,17 @@ Quorum queues only deliver their data-safety/HA guarantee on a **3-node (odd-siz
 
 **Clarification captured:** `FileSizeLimitMb` is a **splitting-logic parameter** (max chunk size for Split.Worker), not an ingestion/package size cap — no request is rejected on size.
 
-**Deferred — job priority by `callingSystemId`:**
+**Job priority by `callingSystemId` (enabled on RabbitMQ 4.3):**
 
-The client asked **not** to design priority yet, pending a decision on upgrading RabbitMQ to **4.x**. Why it matters: the pinned **RabbitMQ 3.13 quorum queues have no native message priority** (quorum-queue priorities arrive in **4.0**). On 3.13, priority would require a topology workaround (separate high/normal lanes, or dedicated worker pools). `calling_system_config` reserves a `priority` column on both networks so the feature can be added without a schema change once the version is settled.
+The client opted to upgrade to **RabbitMQ 4.3** (§20), whose quorum queues support **native message priority** — so priority needs no topology workaround (no separate high/normal lanes, no dedicated worker pools). Mechanism:
 
-| Answer (priority) | Design impact |
-|-------------------|---------------|
-| **Upgrade to RabbitMQ 4.x** (to be discussed) | Native quorum message priority (high/normal). Per-`callingSystemId` priority maps cleanly onto a message-priority field; minimal topology change. |
-| **Stay on 3.13** | Priority needs lanes (≈ doubles main-queue count) or dedicated worker pools per priority class. Heavier; revisit only if priority becomes required before the upgrade. |
+- `calling_system_config.priority` (both networks, `default` fallback) holds the per-caller priority.
+- **Network A** snapshots it onto `job.priority` at ingestion; **Network B** resolves it from **its own** `calling_system_config` when it creates the job row from the header. Priority is **independent per network** (same model as SLA); it is *not* carried in the job header — the operator keeps the two sides aligned per `callingSystemId`.
+- Every next-step message copies `job.priority` into `outbox.priority`; **OutboxRelay** sets the AMQP `priority` property from it on publish (publisher-confirmed). Quorum honors it natively (0–31, higher first); the property survives the `retry`/`reroute` round-trip.
+- Applies **end-to-end** across all phases because every queue is quorum and every publish goes through OutboxRelay.
 
-**Status:** config model **applied to docs**; priority **out of scope** until the 4.x decision.
+**32 graded levels (0–31), default 4:** 4.x quorum priority supports a real graded scale — callers can be ranked finely, not just "VIP vs normal." Set `calling_system_config.priority` per caller (baseline `4`, higher = more urgent). `x-max-priority` is not set (ignored by quorum; priority is always on).
+
+**Strict priority — starvation is the constraint to communicate:** quorum priority is *strict* (higher always dispatched before lower, no fairness). A caller that submits high-priority work continuously **can starve** lower-priority jobs across the shared queues. Mitigations: keep the priority spread tight, reserve the top of the range for genuinely urgent callers, and alert on per-priority queue depth. The 30-min job SLA (§2) still backstops any starved job into a `TimedOut` rather than hanging forever.
+
+**Status:** config model **and** priority **applied to docs**. Open item: cluster size (§20, 3-node recommended).

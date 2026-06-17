@@ -162,7 +162,7 @@ Found during the post-fix dev-readiness review.
 | N7 | LOW | ✅ Resolved | Stability check moot — proxy publishes Rabbit msg only after move; NB never sees mid-write file (Q1/§18.1) | `ARCHITECTURE.md §5.9` + `QUESTIONS §1` |
 | N8 | LOW | ☐ Open | ProxyListener: undefined handling for unparseable filename / missing file | `ARCHITECTURE.md §5.3` |
 | N9 | MED | ☐ Open | `byte_length` removed in QUESTIONS §18 but still present in ARCH §3.6 / DB-SCHEMA / SUMMARY #10 — cross-doc contradiction; coupled to open §18.2–.4 | `QUESTIONS §18` vs `ARCHITECTURE/DB-SCHEMA/SUMMARY` |
-| R1 | HIGH | ✅ Resolved | `consumer_timeout` / queue type — RabbitMQ 3.13 + quorum queues pinned; classic removed (see R6/Q20) | `ARCHITECTURE.md §3.3` / `MICROSERVICES.md` |
+| R1 | HIGH | ✅ Resolved | `consumer_timeout` / queue type — quorum queues; **RabbitMQ 4.3** (S4, ↑ from 3.13); classic removed (see R6/S4/Q20) | `ARCHITECTURE.md §3.3` / `MICROSERVICES.md` |
 | R2 | MED | ✅ Resolved | `consumer_timeout` 5-min floor undocumented — calibration could target sub-5-min values that the broker ignores | `ARCHITECTURE.md §3.3` / `MICROSERVICES.md` |
 | R3 | HIGH | ✅ Resolved | DLX hops are at-most-once by default — silent message loss when target queue full or unavailable; fixed with `dead-letter-strategy=at-least-once` policy | `ARCHITECTURE.md §3.3` / `§3.5` |
 | R4 | HIGH | ✅ Resolved | `reject-publish-dlx` on terminal queues circular/undefined — replaced with `reject-publish` + large `x-max-length` on `*.dead` | `ARCHITECTURE.md §3.5` / `MICROSERVICES.md` |
@@ -249,7 +249,7 @@ Crucially, crash recovery is now **faster** than the old ~90s sweeper: with no `
 - **Network A `conversion_rule`** (`(callingSystemId, source_format)`): forward conversion, reverse conversion, and the Split file-size limit (`FileSizeLimitMb` = max chunk size — a **splitting** parameter, not an ingestion reject limit). Example: `{SourceFormat:heic, RequiredConversion:PNG, reverseConversion:heic, FileSizeLimitMb:200}`. Precedence `(sys,fmt)→(sys,default)→(default,fmt)→(default,default)`.
 - **`calling_system_config`** (both networks): per-caller folders + job SLA. **SLA independent per network** (no A→B carry); operator keeps the two aligned per `callingSystemId`.
 - **Reverse conversion is no longer the inverse of the forward conversion.** It is an independent target resolved on A (may be `null`=skip, equal the source format, or a different type), carried to B verbatim in the mini-manifest's `reverseConversion` field. Network B keeps **no** conversion config; ReverseConverter obeys the carried value.
-- **Priority by `callingSystemId` deferred** — RabbitMQ 3.13 quorum has no native message priority (4.0 only); client will discuss a 4.x upgrade first. `calling_system_config` reserves a `priority` column.
+- **Priority by `callingSystemId`** — initially deferred (3.13 quorum has no native message priority); **subsequently enabled** by the RabbitMQ 4.3 upgrade — see **S4**.
 
 **Schema changes.** New tables `calling_system_config` (A+B) and `conversion_rule` (A only). New columns: `source_file.reverse_conversion`, `source_file.file_size_limit_mb` (A); `expected_file.reverse_conversion` (B). Mini-manifest gains a `reverseConversion` field (§3.6). Old `config` key/value keys `proxy_rule.<format>` / `converter.<format>` / `timeout_sla_minutes` retired into the new tables.
 
@@ -262,7 +262,38 @@ Crucially, crash recovery is now **faster** than the old ~90s sweeper: with no `
 
 **Diagrams not yet updated** (per instruction — `.drawio` untouched this pass). Follow-up: `architecture-v3.drawio` (config source note), `chunk-flow.drawio` / `worker-exception-handling.drawio` (mini-manifest now carries `reverseConversion`; ReverseConverter reads `reverse_conversion`, not inverse-of-applied).
 
-**Still open after this batch (unchanged):** §9 retention, §8 files-per-job, §12 determinism, §18.2/.3/.4 proxy transform, §2/§19/§20; **N9** `byte_length`. **New deferred item:** job priority (pending RabbitMQ 4.x, §21).
+**Still open after this batch (unchanged):** §9 retention, §8 files-per-job, §12 determinism, §18.2/.3/.4 proxy transform, §2/§19; **N9** `byte_length`. **Note:** job priority was deferred here but **enabled** in the very next decision (RabbitMQ 4.3 upgrade) — see **S4**.
+
+---
+
+### S4. RabbitMQ upgrade 3.13 → 4.3 + per-`callingSystemId` job priority (2026-06-17) ✅ APPLIED (docs)
+
+**Decision.** Client chose to **upgrade RabbitMQ 3.13 → 4.3** (quorum queues, PostgreSQL stays 16), specifically to use **native quorum message priority** for the per-`callingSystemId` job priority deferred in S3. Supersedes the 3.13 pin in R6/Q20.
+
+**Why the upgrade unlocks priority cleanly.** 3.13 quorum queues have no message priority (arrives in 4.0); priority there would have needed a topology workaround (separate high/normal lanes per phase, or dedicated worker pools). On **4.x**, quorum queues honor the AMQP `priority` property natively, so priority is just a message property — **no priority-lane queues, no extra topology**.
+
+**Priority design.**
+- `calling_system_config.priority` (both networks, `default` fallback) → snapshot `job.priority` (A at ingestion; B when it creates the job row from the header — **independent per network**, like SLA, not carried in the header) → copied to every `outbox.priority` → **OutboxRelay** sets the AMQP `priority` property on publish (publisher-confirmed). Survives the `retry`/`reroute` round-trip; applies end-to-end.
+- **32 strict levels (0–31)**, default 4, always enabled (`x-max-priority` ignored on quorum; classic = 0–255). Graded ranking *is* possible (corrected after checking the RabbitMQ docs — an earlier note wrongly said "2 levels / high≥5"). **Strict** priority (no fairness) → sustained high-priority load can starve lower levels; keep the spread tight, SLA backstops starved jobs (Q21).
+
+**3.13-fact flips applied across docs.**
+- `delivery-limit`: was "no default on 3.13, must set explicitly" → **defaults to 20 on 4.x**; still pinned explicitly via policy for clarity.
+- Classic queue mirroring: "deprecated in 3.13, removed in 4.0" → **removed in 4.0** (historical).
+- `dead-letter-strategy=at-least-once` requirement (`overflow=reject-publish` + DLX): unchanged on 4.x.
+- All `RabbitMQ 3.13` version strings + the 3.13 docs link → `4.3` / version-agnostic docs link.
+
+**Schema changes.** New columns: `calling_system_config.priority` (A+B), `job.priority` (A+B), `outbox.priority` (A+B). OutboxRelay SELECT + publish carry `priority`.
+
+**Ripple effects (applied in docs).**
+- `ARCHITECTURE.md`: stack note, §3.1 (OutboxRelay rows), §3.3 (relay loop + step contract outbox insert + calibration #3/#6 + queue-type block), §5.1 (OutboxRelay-B), §6.1 (priority section), §6.4, §10 (#22 flipped to Enabled).
+- `DB-SCHEMA.md`: `calling_system_config`/`job`/`outbox` columns, relay query, Resolved-decisions.
+- `MICROSERVICES.md`: stack note + defaults, shared-infra RabbitMQ row (version, delivery-limit, mirroring, priority), Recovery & Calibration, OutboxRelay rows, per-caller-config row.
+- `SUMMARY.md`: headline choices 4 + new 18, open-questions 5/6.
+- `QUESTIONS-TO-CLIENT.md`: §19 (delivery-limit), §20 (revised to 4.3 + priority), §21 (priority enabled).
+
+**Diagrams not yet updated** (`.drawio` untouched). Follow-up: any `RabbitMQ 3.13` labels → `4.3`; note OutboxRelay sets message priority. Combine with the S3 diagram follow-ups.
+
+**Open after this batch:** §20 cluster size (3-node recommended); >2 priority tiers not possible on quorum (raise only if requested). S3's open items unchanged.
 
 ---
 
@@ -272,16 +303,16 @@ Found during RabbitMQ docs alignment check against `ARCHITECTURE.md` and `MICROS
 
 | # | Severity | Status | Issue |
 |---|----------|--------|-------|
-| R1 | HIGH | ✅ Resolved | `consumer_timeout` / queue type → RabbitMQ 3.13 + quorum (R6) |
+| R1 | HIGH | ✅ Resolved | `consumer_timeout` / queue type → quorum, RabbitMQ 4.3 (R6/S4) |
 | R2 | MED | ✅ Resolved | `consumer_timeout` 5-min floor |
 | R3 | HIGH | ✅ Resolved | DLX at-most-once silent loss |
 | R4 | HIGH | ✅ Resolved | `reject-publish-dlx` circular on terminal queues |
 | R5 | MED | ✅ Resolved | 36 queues → 16 with shared retry/dead |
-| R6 | MED | ✅ Resolved (Q20) | Queue type pinned: RabbitMQ 3.13, quorum, 3-node cluster; classic removed |
+| R6 | MED | ✅ Resolved (Q20) · ⬆ S4 | Queue type: quorum, 3-node cluster; version RabbitMQ **4.3** (↑ from 3.13, S4); classic removed |
 
-### R1. `consumer_timeout` enforcement & queue type ✅ RESOLVED (quorum on 3.13 — see R6/Q20)
+### R1. `consumer_timeout` enforcement & queue type ✅ RESOLVED (quorum, RabbitMQ 4.3 — see R6/S4/Q20)
 
-On RabbitMQ 4.3+, `consumer_timeout` is enforced **only on quorum queues**; on the pinned **3.13** it is evaluated channel-side and applies to all queue types. Either way the deployment uses **quorum queues exclusively** (QUESTIONS §20), so `consumer_timeout` is always enforced and the classic-enforcement question is moot. Classic queues are not used.
+On the pinned **RabbitMQ 4.3**, `consumer_timeout` is enforced on quorum queues, and the deployment uses **quorum queues exclusively** (QUESTIONS §20), so `consumer_timeout` is always enforced. Classic queues are not used.
 **Applied:** all main/retry/dead queues are quorum. `ARCHITECTURE.md §3.3` calibration point 1 + `MICROSERVICES.md` shared-infra row. The client-side watchdog is kept as the *faster* primary deadlock reclaim (not a classic-queue crutch); see R6.
 
 ---
@@ -320,7 +351,9 @@ Per-queue `*.retry` + `*.dead` pairs produce 12 retry + 12 dead = 24 overhead qu
 
 ---
 
-### R6. Queue type ✅ RESOLVED — RabbitMQ 3.13, quorum, 3-node cluster (Q20, 2026-06-17)
+### R6. Queue type ✅ RESOLVED — quorum, 3-node cluster (Q20)  ·  ⬆ version SUPERSEDED by S4 (4.3)
+
+> **Superseded 2026-06-17 by S4:** the version was first pinned to 3.13, then upgraded to **RabbitMQ 4.3** to gain native quorum message priority (§21). The quorum-queue + 3-node decision stands; only the version and its version-specific notes below changed (see S4). Original 3.13 analysis kept for traceability.
 
 **Context.** Three recovery backstops the design uses are quorum-queue features: `consumer_timeout` (hung-worker reclaim), `delivery-limit` (poison backstop), and at-least-once dead-lettering (no silent DLX loss). While the client's RabbitMQ version was unknown, the design also carried a client-side watchdog and a Network-A `TimeoutSweeper` (§3.7) as defense-in-depth.
 
