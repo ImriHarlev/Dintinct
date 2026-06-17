@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
   <diagram id="chunk-flow" name="Chunk Processing Flow">
-    <mxGraphModel dx="2291" dy="1187" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+    <mxGraphModel dx="1348" dy="729" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -70,14 +70,14 @@
         <mxCell id="s2_5" value="&lt;b&gt;Drain in batches (≤500/tx, loop until empty):&lt;/b&gt;&lt;br&gt;Drain inbox FileManifest rows →&lt;br&gt;read each file-manifest JSON →&lt;br&gt;INSERT expected_file + expected_chunk&lt;br&gt;(ON CONFLICT DO NOTHING)&lt;br&gt;&lt;b&gt;Also drain FileManifestError rows →&lt;/b&gt;&lt;br&gt;INSERT expected_file(Failed) + outbox(files.finalized)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="s2" vertex="1">
           <mxGeometry x="25" y="510" width="330" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="s2_e5" style="edgeStyle=orthogonalEdgeStyle;entryX=0.5;entryY=1;exitX=0.5;exitY=1;" parent="s2" source="s2_d1" target="s2_5" edge="1">
+        <mxCell id="s2_e5" style="edgeStyle=orthogonalEdgeStyle;entryX=0.25;entryY=0;exitX=0.5;exitY=1;entryDx=0;entryDy=0;" parent="s2" source="s2_d1" target="s2_5" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="s2_lbl_yes" value="YES" style="text;html=1;fontSize=9;fontStyle=1;" parent="s2" vertex="1">
           <mxGeometry x="192" y="484" width="30" height="20" as="geometry" />
         </mxCell>
         <mxCell id="s2_6" value="Drain buffered Chunks&lt;br&gt;matching expected_chunks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="s2" vertex="1">
-          <mxGeometry x="25" y="620" width="330" height="50" as="geometry" />
+          <mxGeometry x="25" y="630" width="330" height="50" as="geometry" />
         </mxCell>
         <mxCell id="s2_e6" style="edgeStyle=orthogonalEdgeStyle;" parent="s2" source="s2_5" target="s2_6" edge="1">
           <mxGeometry relative="1" as="geometry" />
@@ -169,7 +169,7 @@
         <mxCell id="s3_e8" style="edgeStyle=orthogonalEdgeStyle;" parent="s3" source="s3_8" target="s3_d1" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="s3_9" value="Read chunks from proxy delivery dir&lt;br&gt;concat → work/{job_id}/assembled/{file_id}.bin&lt;br&gt;(.tmp + rename)&lt;br&gt;INSERT outbox(files.assembled)&lt;br&gt;UPDATE job SET status=&#39;Assembling&#39;&lt;br&gt;COMMIT → ack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s3" vertex="1">
+        <mxCell id="s3_9" value="Read chunks from proxy delivery dir&lt;br&gt;concat → work/{job_id}/assembled/{file_id}.bin&lt;br&gt;(.tmp + rename)&lt;br&gt;INSERT outbox(files.assembled)&lt;br&gt;UPDATE job SET status=&#39;Assembling&#39;&lt;br&gt;COMMIT → ack&lt;br&gt;post-COMMIT: best-effort delete consumed chunks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s3" vertex="1">
           <mxGeometry x="330" y="772.5" width="160" height="95" as="geometry" />
         </mxCell>
         <mxCell id="s3_e9" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" parent="s3" source="s3_d1" target="s3_9" edge="1">
@@ -220,7 +220,7 @@
         <mxCell id="s4_e6" style="edgeStyle=orthogonalEdgeStyle;" parent="s4" source="s4_6" target="s4_d1" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="s4_7" value="Read chunks from proxy delivery dir (in-place)&lt;br&gt;concat → work/{job_id}/assembled/{file_id}.bin&lt;br&gt;INSERT outbox(files.assembled)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s4" vertex="1">
+        <mxCell id="s4_7" value="Read chunks from proxy delivery dir (in-place)&lt;br&gt;concat → work/{job_id}/assembled/{file_id}.bin&lt;br&gt;INSERT outbox(files.assembled)&lt;br&gt;post-COMMIT: best-effort delete consumed chunks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;" parent="s4" vertex="1">
           <mxGeometry x="20" y="695" width="350" height="70" as="geometry" />
         </mxCell>
         <mxCell id="s4_e7" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="s4" source="s4_d1" target="s4_7" edge="1">
@@ -283,7 +283,7 @@
         <mxCell id="s5_eb2" style="edgeStyle=orthogonalEdgeStyle;" parent="s5" source="s5_b2" target="s5_b3" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="inplace_banner" value="Chunks are NEVER copied to work dir. expected_chunk.name resolves against proxy delivery dir. Assembly reads chunks IN-PLACE during concat. Reporter deletes proxy chunks on terminal job." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;align=center;" parent="1" vertex="1">
+        <mxCell id="inplace_banner" value="Chunks are NEVER copied to work dir. expected_chunk.name resolves against proxy delivery dir. Assembly reads chunks IN-PLACE during concat, then best-effort deletes consumed chunks post-COMMIT. Reporter sweeps any remainder on terminal job; the proxy self-cleans days-old leftovers." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;align=center;" parent="1" vertex="1">
           <mxGeometry x="10" y="895" width="1590" height="40" as="geometry" />
         </mxCell>
         <mxCell id="result" value="files.assembled → ReverseConverter.Worker (pure reverse-convert, reads work/.../assembled/*.bin) → files.finalized → Reporter.Worker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" parent="1" vertex="1">

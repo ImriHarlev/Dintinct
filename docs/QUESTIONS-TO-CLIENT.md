@@ -4,7 +4,11 @@ These items need a client/stakeholder decision before final implementation.
 
 ---
 
-## 1. Direct writes to the Proxy outbox (no `.tmp` + rename)
+## 1. Direct writes to the Proxy outbox (no `.tmp` + rename)  &nbsp;✅ ANSWERED — `.tmp` + rename is the chosen mechanism
+
+> **Client answer (2026-06-14):** "We can do `.tmp` + rename on the proxy folders + destination folders; the proxy ignores `.tmp` files." **Applied:** `.tmp` + rename IS the chosen atomic-write mechanism on the A→proxy outbox dirs and on `target_path` (§17). The earlier premise (proxy may pick up temp-named files) is **reversed** — the proxy ignores `.tmp` files — so the staging-subdir + `mv` workaround (option **B**) is **dropped**. The mitigation options below (A–E) are superseded.
+>
+> **Related — proxy *delivery* atomicity (below, also §18.1): also RESOLVED.** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving, so NetworkB acts on the message and never observes a mid-write file. This is the truncation guard that replaces the dead `byte_length` check.
 
 **Context.** NetworkA writes chunks and the manifest JSON directly into the proxy outbox directories. We were told the proxy may pick up `.tmp` (or any temp-named) files, so the standard atomic-write trick (write to `.tmp`, then rename to the final name) cannot be used.
 
@@ -20,7 +24,7 @@ These items need a client/stakeholder decision before final implementation.
 
 **Question.** Which mitigation is acceptable, or does the proxy already debounce on inactivity? Option **B** is cheapest on our side if confirmed compatible.
 
-**Related — proxy *delivery* atomicity on the B side (BLOCKERS N7).** ⚠ **Elevated severity.** The proxy transforms chunks in transit non-deterministically and changes their size (see §18). This means NetworkB can no longer use `byte_length`-vs-observed-size validation to detect truncation — that signal is dead. **Proxy atomic write to B's delivery dir is now the only truncation-detection mechanism.** Does the proxy write each delivered file atomically (e.g. temp + rename), or can NetworkB observe a file mid-write? If non-atomic, there is no safe way to detect a truncated chunk delivery. The 200ms two-stat check is also insufficient since byte_length is gone. Must confirm: proxy writes to NetworkB delivery dir are atomic (complete-or-nothing), or we accept silent truncation risk.
+**Related — proxy *delivery* atomicity on the B side (BLOCKERS N7).**  ✅ **RESOLVED (2026-06-14).** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving into B's delivery dir. NetworkB acts on the message, never scans the directory mid-write, and so can never observe a truncated file — this is the truncation guard that replaces the now-dead `byte_length`-vs-observed-size check. (Original concern retained below for context.) The proxy transforms chunks in transit non-deterministically and changes their size (see §18). This means NetworkB can no longer use `byte_length`-vs-observed-size validation to detect truncation — that signal is dead. **Proxy publish-after-move (message-gated delivery) is now the truncation-detection mechanism.** Does the proxy write each delivered file atomically (e.g. temp + rename), or can NetworkB observe a file mid-write? *(Answered: NB is gated on the post-move Rabbit message, so it never observes a mid-write file.)* The 200ms two-stat check is also insufficient since byte_length is gone.
 
 ---
 
@@ -36,9 +40,13 @@ We've assumed defaults below. Confirm or override per phase:
 | Chunks-arrival wait after manifest on NetworkB | 60 minutes |
 | Job-level total SLA before forced timeout | 24 hours |
 
+> See also **§19** — the RabbitMQ `consumer_timeout` (worker-deadlock recovery) is a separate, lower-level timer than these business-level waits, and is driven by max per-step processing time.
+
 ---
 
-## 3. CSV semantics for partially-failed jobs
+## 3. CSV semantics for partially-failed jobs  &nbsp;✅ ANSWERED — at-least-once accepted (consumer idempotent)
+
+> **Client answer (2026-06-14):** At-least-once callback delivery is acceptable; the consuming system is treated as idempotent — a repeated callback for an already-processed `jobId`/`externalId` is safely ignored. **Applied:** no stronger delivery mechanism (outbox-routed dispatch) is required; `CompletedPartially` confirmed acceptable to downstream consumers.
 
 When some files succeed and some fail/are unsupported:
 
@@ -48,15 +56,19 @@ When some files succeed and some fail/are unsupported:
 
 ---
 
-## 4. Should NetworkA persist the source request payload verbatim?
+## 4. Should NetworkA persist the source request payload verbatim?  &nbsp;✅ ANSWERED — yes (JSONB on `job`)
+
+> **Client answer (2026-06-14):** "Don't care." **Applied:** keep the proposed default — persist the source request payload verbatim as a JSONB column on `job` for audit / replay.
 
 For audit / replay. We propose yes, stored as a JSONB column on `job`. Confirm acceptable.
 
 ---
 
-## 5. Network B output for nested archives
+## 5. Network B output for nested archives  &nbsp;✅ ANSWERED — render each archive container as a directory (last dot → underscore)
 
-The simplification says we no longer repack nested archives. The assembled files inside a nested archive will be placed under their *original relative path* (e.g., `parent.zip/inner.zip/leaf.docx` becomes `target_path/parent/inner/leaf.docx`).
+> **Client answer (2026-06-14):** For zip/rar/7z and any supported archive type, render each archive container `name.ext` as a directory named `name_ext` — replace the **last** dot with an underscore. The leaf file keeps its real extension. Example: `parent.zip/inner.zip/leaf.docx` → `target_path/parent_zip/inner_zip/leaf.docx`. **Applied:** this encoding is baked into `original_relative_path` at Network A.
+
+The simplification says we no longer repack nested archives. The assembled files inside a nested archive will be placed under their *original relative path* (e.g., `parent.zip/inner.zip/leaf.docx` becomes `target_path/parent_zip/inner_zip/leaf.docx` — each archive container `name.ext` becomes a directory `name_ext`).
 
 Confirm this is the desired output layout for the client, vs. some other flattening rule.
 
@@ -68,7 +80,9 @@ If the same `ExternalId` is submitted twice, the API returns the existing `jobId
 
 ---
 
-## 7. Ingestion services: 4 separate or 1 with adapters?
+## 7. Ingestion services: 4 separate or 1 with adapters?  &nbsp;✅ ANSWERED — 4 separate services
+
+> **Client answer (2026-06-14):** 4 separate ingestion services for now. **Applied:** 4-service path confirmed (HTTP API, FolderWatcher, RabbitBridge, RequestFileWatcher remain independently deployed); no collapse to a single Ingestion service.
 
 The current design has 4 ingestion services (HTTP API, FolderWatcher, RabbitBridge, RequestFileWatcher). Both independent reviewers proposed collapsing to **one Ingestion service** hosting all 4 channels as in-process HostedServices, sharing one image, one deployment, one DB pool.
 
@@ -79,7 +93,9 @@ Both are defensible. The 4-service path is the current default per the user's ea
 
 ---
 
-## 8. Average files per job (drives scale sizing)
+## 8. Average files per job (drives scale sizing)  &nbsp;⏳ STILL OPEN — no data; ~5 min/job target recorded
+
+> **Client note (2026-06-14):** Client has **no data** on the average package / files-per-job. Client states the average **job** should take ~5 minutes, excluding proxy delay. **Status:** still open — these numbers drive partitioning + `consumer_timeout` sizing (§19); treat as a post-launch calibration item (measure from real traffic).
 
 For partitioning, `chunk` table growth, and the "hot row on `job.files_manifest_written_count`" question: what is the **typical** number of leaf files per job, and the **p99**? Examples:
 
@@ -103,7 +119,9 @@ Without retention, 50 TB/month of disk fills up indefinitely.
 
 ---
 
-## 10. Object storage availability
+## 10. Object storage availability  &nbsp;✅ ANSWERED — no S3; filesystem fallback
+
+> **Client answer (2026-06-14):** S3 is **NOT** available. **Applied:** fall back to filesystem (RWX) for all internal `work/` directories on both A and B; we accept the operational cost. Couples with §15/§16 (RWX-everywhere assumed).
 
 Is an S3-compatible object store available in the OpenShift cluster (ODF Noobaa, MinIO operator, external S3)? If yes, we will use it for internal `work/` directories on both A and B, which is more reliable than RWX PVs at this scale. If no, we fall back to RWX filesystem and accept the operational cost.
 
@@ -130,7 +148,9 @@ When NetworkA's `IFileConverter` runs on a source file, does it ever produce **m
 
 ---
 
-## 12. Converter determinism  &nbsp;⛔ PRE-DEV BLOCKER (B10) — most critical
+## 12. Converter determinism  &nbsp;⛔ PRE-DEV BLOCKER (B10) — owned + in progress
+
+> **Status (2026-06-14):** The implementer who owns the transformation + split logic will fix the Aspose `PDF → DOCX` non-determinism via **option (a)** — make the converter deterministic. **Option (b)** (persist the first split output and re-serve the exact bytes on retry) is **kept as the documented contingency** if (a) proves infeasible. Still a pre-dev item, now owned and in progress.
 
 For redelivery safety, every `IFileConverter` must be **deterministic**: same input bytes → same output bytes. This matters because on a crash-retry, NetworkA re-runs the converter. If output differs, chunks already delivered to NetworkB (from the first attempt) are from a different version of the file than the chunks NetworkA re-sends — assembly is silently corrupt.
 
@@ -153,7 +173,9 @@ For redelivery safety, every `IFileConverter` must be **deterministic**: same in
 
 ---
 
-## 13. Per-file failure behavior
+## 13. Per-file failure behavior  &nbsp;✅ ANSWERED — whole-file Failed on any chunk error
+
+> **Client answer (2026-06-14):** Yes — mark the file as `Failed` in the CSV; any chunk error fails the whole file. **Applied:** whole-file failure on any chunk error (no partial recovery / no assemble-what's-there).
 
 If a single chunk of a file arrives as `.ERROR.txt`, the whole file is marked `Failed` in the CSV (status=`FAILED`). Confirm this is desired vs. partial recovery (assemble what's there, mark only the missing range).
 
@@ -165,7 +187,9 @@ This question is obsolete. Chunks are no longer NACK+requeue'd when their file-m
 
 ---
 
-## 15. Storage backend (local PV vs. object storage)  &nbsp;⛔ PRE-DEV BLOCKER (B10, with §16)
+## 15. Storage backend (local PV vs. object storage)  &nbsp;✅ ANSWERED (interim) — filesystem PV, RWX assumed
+
+> **Client answer (2026-06-14):** Client first answered "RWO only" for the StorageClass, then clarified to assume (for now) that every pod can read AND write-many to every folder — i.e. treat all shared dirs as **RWX-capable**, no node-affinity pinning. **Applied:** combined with §10 (no S3), all `work/` volumes are filesystem-backed and RWX is assumed available. Keep local/shared filesystem PV; no S3 backend. Interim assumption — revisit if RWX-everywhere proves false.
 
 Work dirs default to local PV. If the worker pod dies, the PV reattaches to its replacement pod automatically (OpenShift). The window of unavailability for a job is the pod restart time (~30s typical).
 
@@ -182,7 +206,9 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 
 ---
 
-## 16. RWX StorageClass availability  &nbsp;⛔ PRE-DEV BLOCKER (B10, with §15)
+## 16. RWX StorageClass availability  &nbsp;✅ ANSWERED (interim) — assume RWX everywhere
+
+> **Client answer (2026-06-14):** Client answered "RWO only" for the StorageClass, then clarified to assume (for now) that every pod can read AND write-many to every folder — treat all shared dirs as RWX-capable, with **no node-affinity pinning**. **Applied:** proceed with the shared-PV (RWX) design as documented; no node-affinity rules, no object-storage-from-day-1 fallback. Interim assumption — if RWX truly is unavailable (RWO-only), revisit and adopt node-affinity pinning per the RWO row below.
 
 **Context.** Work directories on both A and B default to a shared PV so multiple worker replicas (Prepare, Convert, Split on A; Assembly, ReverseConverter on B) can access the same job's files simultaneously. This requires an **RWX-capable StorageClass** in OpenShift (e.g., CephFS via ODF, NFS provisioner, Azure Files). If only RWO is available, each job must be pinned to the node that holds its PV via node affinity — limiting pod scheduling and making rolling restarts disruptive.
 
@@ -199,7 +225,9 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 
 ---
 
-## 17. `target_path` storage type and access pattern
+## 17. `target_path` storage type and access pattern  &nbsp;✅ ANSWERED — network share (NFS/SMB), `.tmp` + rename
+
+> **Client answer (2026-06-14):** `target_path` is a **network share (NFS/SMB)** for now. **Applied:** (1/4) writable **directly** from the Reporter/ReverseConverter pod — no relay service; (2) `.tmp` + rename is fine on this share; (3) the consuming system scans the directory but **ignores `.tmp` files**, so intermediate writes are safe; and if two jobs write to the same `target_path` and filenames collide, **overwrite (last-writer-wins)**.
 
 **Context.** Network B's `ReverseConverter.Worker` writes assembled files into `target_path/<original_relative_path>` via `.tmp + rename` on the local filesystem. The architecture treats `target_path` as a client-owned filesystem interface. We need to know:
 
@@ -212,7 +240,11 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 
 ---
 
-## 18. Proxy transform behavior  &nbsp;⛔ PRE-DEV BLOCKER — affects protocol and retry design
+## 18. Proxy transform behavior  &nbsp;⚠ PARTIAL — §18.1 ✅ ANSWERED; §18.2–§18.4 still open
+
+> **Status (2026-06-14):** §18.1 (delivery atomicity) is **RESOLVED** — the proxy publishes its RabbitMQ message to NetworkB only *after* the file finishes moving, so NB never observes a mid-write file (no truncation). See annotation on §18.1 below and the resolved note in §1. **§18.2, §18.3, §18.4** (reverse-converter transform tolerance, transform scope, transform failure mode) **remain the open parts of §18.**
+>
+> **Additional client side-notes (2026-06-14), folded into cleanup behavior:** NetworkB **moves/consumes** files out of the proxy folder — Assembly reads chunks in-place during concat, then best-effort deletes consumed chunks **post-COMMIT**; the proxy **self-cleans** days-old leftovers. The proxy **overwrites** files re-transferred to NetworkB with the same name + extension (supports first-writer-wins dedup under determinism).
 
 **Known facts (confirmed in conversation):**
 - Proxy transform is **non-deterministic**: same input bytes → different output bytes across runs.
@@ -226,7 +258,7 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 
 **Open questions requiring client/operator answers:**
 
-1. **Proxy delivery atomicity (critical — links to §1).** Does the proxy write each chunk to NetworkB's delivery dir atomically (e.g. temp + rename, or equivalent)? With `byte_length` gone, this is the **only** mechanism preventing NetworkB from assembling a truncated chunk. If non-atomic, there is no safe truncation guard and we accept silent corruption risk.
+1. **Proxy delivery atomicity (critical — links to §1).**  ✅ **RESOLVED (2026-06-14).** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving into the delivery dir; NetworkB acts on the message and never observes a mid-write file. This message-gated delivery is the truncation guard that replaces the dead `byte_length` check. *(Original question retained:)* Does the proxy write each chunk to NetworkB's delivery dir atomically (e.g. temp + rename, or equivalent)? With `byte_length` gone, this is the **only** mechanism preventing NetworkB from assembling a truncated chunk. If non-atomic, there is no safe truncation guard and we accept silent corruption risk.
 
 2. **Reverse converter variant tolerance.** The proxy transform is non-deterministic. Does the reverse converter in NetworkB need to handle multiple possible transform variants of the same source content, or does it operate on content semantics only (i.e., it doesn't care about how the proxy encoded/wrapped the bytes)?
 
@@ -238,7 +270,92 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 
 | Question | Risk if skipped |
 |----------|----------------|
-| §18.1 (atomic delivery) | Silent truncated-chunk assembly — no detection, no error |
+| §18.1 (atomic delivery) | ✅ Resolved — proxy publishes Rabbit message only after the move; NB never observes a mid-write file |
 | §18.2 (reverse converter tolerance) | Reverse converter fails or corrupts on unexpected transform variant |
 | §18.3 (transform scope) | Cannot bound reverse converter input surface; may miss edge cases |
 | §18.4 (transform failure mode) | Unexpected proxy error format causes unhandled exception or silent drop on NetworkB |
+
+---
+
+## 19. Worker-recovery calibration (RabbitMQ `consumer_timeout`)  &nbsp;⏳ TUNE FROM METRICS (not a pre-dev blocker)
+
+**Context.** Recovery from a crashed/hung worker is handled by RabbitMQ redelivery, not by a bespoke heartbeat/sweeper (see ARCHITECTURE.md §3.3, BLOCKERS S1). Recovery latency by failure mode:
+
+- **Process crash / OOM / pod restart** → the broker requeues the unacked message on connection close → **seconds**. (No tuning needed.)
+- **Network partition / hard kill** → AMQP connection heartbeat detects it → **~60s**. (No tuning needed.)
+- **App deadlock / infinite loop (connection still alive)** → the broker waits `consumer_timeout`, then closes the channel and requeues → **up to `consumer_timeout`** (RabbitMQ default **30 min**). This is the only knob.
+
+`consumer_timeout` must be set **above the longest legitimate single-message processing time** of any phase — otherwise a healthy-but-slow step is killed mid-work, requeued, and (after the `delivery-limit`, which we set to 20 — RabbitMQ 3.13 has no default) false-dead-lettered. So it is bounded below by max step time and above by acceptable deadlock-recovery latency.
+
+**Crisp questions:**
+1. **Max single-file processing time per phase** — the slowest a single source file can take to Prepare/Convert/Split (A) and Assemble/Reverse-convert (B). A rough p99 + worst-case ceiling is enough. (We can also measure this from the per-step duration histogram after ~1 week of real traffic — see §8 files-per-job, which drives file sizes.)
+2. **Acceptable recovery latency for a deadlocked worker** — is "up to ~`consumer_timeout`" (minutes) acceptable for a stuck file, given the job-level SLA already backstops the *job* at 30 min? Or must a stuck file be reclaimed faster?
+
+**Impact by answer:**
+
+| Answer | Design impact |
+|--------|---------------|
+| Max step time known + minutes-level recovery acceptable | Set `consumer_timeout` ≈ 3–4× max step time (start at 30-min default, tune down). No code change — broker config. |
+| Max step time **> job SLA** (a single file can take longer than the 30-min §2 SLA) | The **SLA is mis-set**, independent of recovery design — must raise the SLA or split the work. Surface before launch. |
+| A specific long phase needs **faster-than-`consumer_timeout`** reclaim | Re-introduce a per-row heartbeat + single-replica sweeper **for that one phase** via `phase_config` (the escape hatch). Localized, not global. |
+
+**Default if unanswered:** ship with `consumer_timeout=30min` (RabbitMQ default), `prefetch=1`, quorum `delivery-limit=20` (set explicitly via policy — no default on 3.13), **plus the client-side watchdog** (see §20) which reclaims a hung worker in seconds; calibrate from the per-step duration histogram post-launch. Safe — the job-level `TimeoutSweeper` (B, §2 SLA) and `TimeoutSweeper-A` (ARCHITECTURE.md §3.7) backstop any worker that never recovers.
+
+---
+
+## 20. RabbitMQ version & queue type  &nbsp;✅ ANSWERED — RabbitMQ 3.13, quorum queues  ·  ⏳ topology sub-item open (3-node vs single-node)
+
+> **Client answer (2026-06-17):** RabbitMQ **3.13**, **quorum queues**. **Applied:** quorum is the only queue type — all classic-queue fallback content removed from the architecture. PostgreSQL pinned to **16** in the same decision. The three backstops the recovery design uses are all available on 3.13 quorum queues (`consumer_timeout`, `delivery-limit`, `dead-letter-strategy=at-least-once`), with the version-specific configuration notes below.
+
+**RabbitMQ 3.13 quorum specifics (verified against the 3.13 docs):**
+
+- **`consumer_timeout`** — enforced on quorum queues; default **30 min**, evaluated at 1-minute intervals. The client-side watchdog (ARCHITECTURE.md §3.3) reclaims a hung worker faster and is the primary defense; `consumer_timeout` is the coarse broker backstop.
+- **`delivery-limit`** — **RabbitMQ 3.13 has NO default** (the default of 20 only arrives in 4.0). It **must be set explicitly via policy** — we set **20**. Without it, a poison message loops indefinitely at the broker (the app-level `max_retries=5` counter still bounds it, but never rely on a broker default that does not exist on 3.13).
+- **`dead-letter-strategy=at-least-once`** — supported on 3.13, but **requires** the queue also use `overflow=reject-publish` (it does **not** work with the default `drop-head`) **and** a configured dead-letter-exchange. Both are already set by this topology, so DLX re-publishes use publisher confirms internally → no silent message loss.
+- **Mirrored classic queues** — deprecated in 3.13, removed in 4.0. Not used.
+
+**Remaining open sub-item — cluster size (recommend 3-node):**
+
+Quorum queues only deliver their data-safety/HA guarantee on a **3-node (odd-sized) cluster** — each queue is replicated across all 3 nodes (Raft majority), so one node can be lost with **zero message loss and zero downtime** (leader re-elected elsewhere). On a **single node**, quorum still works and is durable to local disk on clean restart, but: (a) a node outage stalls the whole pipeline until it returns, and (b) a disk failure loses in-flight (published-but-unconsumed) messages — the transactional outbox cannot resend them because `published_at` is already set, so those files stall until the 30-min `TimeoutSweeper`. A single node also pays quorum's Raft fsync cost for **zero** replication benefit.
+
+| Answer | Design impact |
+|--------|---------------|
+| **3-node cluster per network** (recommended) | Quorum as intended — replicated, survives one node loss. Matches guiding principle #3 (crash-safe). Documented default. |
+| **Single node per network** | Functional but a broker **SPOF**: pipeline stalls on node outage; in-flight messages lost on disk failure (recovered only at the 30-min SLA). Accept explicitly if cost-driven. |
+
+**Default if unanswered:** **3-node cluster per network.** Reversible — cluster size is a deployment/topology change (`definitions.json` + StatefulSet replica count), no application code change.
+
+---
+
+## 21. Per-`callingSystemId` configuration, reverse conversion & priority  &nbsp;✅ ANSWERED (2026-06-17) — config model set · ⏳ priority deferred to RabbitMQ 4.x
+
+> **Client answer (2026-06-17):** All caller-varying configuration is keyed by `callingSystemId` with a `default` fallback. The proxy/processing config lives on **Network A** and the **reverse-conversion instruction is carried to Network B via the mini-manifest** (B holds no conversion config). SLA/timeout is an **independent table per network**. **Priority is deferred** — the client will discuss a RabbitMQ **4.x** upgrade first (3.13 quorum queues have no native message priority).
+
+**What is per-`callingSystemId` (with `default` fallback):**
+
+- **Proxy/processing config (Network A, `conversion_rule`, keyed `(callingSystemId, source_format)`).** Example rule the client gave:
+  ```jsonc
+  {
+    "SourceFormat":       "heic",   // matches source_file.original_format
+    "RequiredConversion": "PNG",    // forward conversion on A; null = pass-through
+    "reverseConversion":  "heic",   // reverse target on B; null = no reverse; may differ from SourceFormat
+    "FileSizeLimitMb":    200       // Split.Worker max bytes per chunk (split sizing — NOT an ingestion reject limit)
+  }
+  ```
+  Resolution precedence (most specific wins): `(callingSystemId, sourceFormat)` → `(callingSystemId, 'default')` → `('default', sourceFormat)` → `('default', 'default')`. Convert.Worker snapshots `applied_conversion` / `reverse_conversion` / `file_size_limit_mb` onto `source_file`, freezing the rule per job.
+- **Folders + SLA (both networks, `calling_system_config`).** Per-caller outbox/work folder locations and the job-level SLA/timeout. **SLA is independent per network** — A has its own (§3.7), B has its own (§5.7); the operator sets both and keeps them aligned per `callingSystemId`. Broker-level timers (`consumer_timeout`, AMQP heartbeat, `prefetch`) stay global — they are queue/node-scoped and cannot be per-caller.
+
+**Reverse conversion semantics (clarified):** reverse conversion is **not** the inverse of the forward conversion. It is an independent per-`(callingSystemId, source_format)` target: `null` → file type needs **no** reverse conversion (pass-through on B); equal to the source format → undo the forward conversion; a different value → reverse-convert to a **different** type. A resolves it; the mini-manifest's `reverseConversion` field carries it to B verbatim; ReverseConverter obeys it (§5.5).
+
+**Clarification captured:** `FileSizeLimitMb` is a **splitting-logic parameter** (max chunk size for Split.Worker), not an ingestion/package size cap — no request is rejected on size.
+
+**Deferred — job priority by `callingSystemId`:**
+
+The client asked **not** to design priority yet, pending a decision on upgrading RabbitMQ to **4.x**. Why it matters: the pinned **RabbitMQ 3.13 quorum queues have no native message priority** (quorum-queue priorities arrive in **4.0**). On 3.13, priority would require a topology workaround (separate high/normal lanes, or dedicated worker pools). `calling_system_config` reserves a `priority` column on both networks so the feature can be added without a schema change once the version is settled.
+
+| Answer (priority) | Design impact |
+|-------------------|---------------|
+| **Upgrade to RabbitMQ 4.x** (to be discussed) | Native quorum message priority (high/normal). Per-`callingSystemId` priority maps cleanly onto a message-priority field; minimal topology change. |
+| **Stay on 3.13** | Priority needs lanes (≈ doubles main-queue count) or dedicated worker pools per priority class. Heavier; revisit only if priority becomes required before the upgrade. |
+
+**Status:** config model **applied to docs**; priority **out of scope** until the 4.x decision.

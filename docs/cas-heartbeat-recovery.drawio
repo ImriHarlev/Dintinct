@@ -1,11 +1,11 @@
-<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5" pages="3">
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5" pages="4">
   <diagram name="1 — Normal Flow" id="normal-flow">
-    <mxGraphModel dx="1200" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="660" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="640" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="t1" value="Normal Flow: Claim → Heartbeat → Complete" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=15;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="60" y="10" width="580" height="26" as="geometry" />
+        <mxCell id="t1" value="Normal Flow: Idempotent Work → done-CAS → Commit → Ack" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="10" width="640" height="26" as="geometry" />
         </mxCell>
         <!-- actors -->
         <mxCell id="a-rb" value="RabbitMQ" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" vertex="1" parent="1">
@@ -21,105 +21,106 @@
         <mxCell id="ll-rb" style="endArrow=none;dashed=1;strokeColor=#d6b656;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="110" y="82" as="sourcePoint" />
-            <mxPoint x="110" y="620" as="targetPoint" />
+            <mxPoint x="110" y="540" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-wa" style="endArrow=none;dashed=1;strokeColor=#6c8ebf;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="290" y="82" as="sourcePoint" />
-            <mxPoint x="290" y="620" as="targetPoint" />
+            <mxPoint x="290" y="540" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-pg" style="endArrow=none;dashed=1;strokeColor=#82b366;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="470" y="82" as="sourcePoint" />
-            <mxPoint x="470" y="620" as="targetPoint" />
+            <mxPoint x="470" y="540" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <!-- step 1 -->
+        <!-- step 1: deliver -->
         <mxCell id="s1" style="endArrow=block;endFill=1;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="110" y="130" as="sourcePoint" />
             <mxPoint x="290" y="130" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="s1l" value="deliver job-42" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="s1l" value="deliver job-42 (prefetch=1)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="110" y="112" width="180" height="16" as="geometry" />
         </mxCell>
-        <!-- step 2 -->
-        <mxCell id="s2" style="endArrow=block;endFill=1;" edge="1" parent="1">
+        <!-- step 2: idempotent work (no claim, no -ing state) -->
+        <mxCell id="s2" value="Do idempotent work (no claim / no -ing state):&#xa;• write deterministically-named files (.tmp+rename; proxy ignores .tmp)&#xa;• INSERT child rows ON CONFLICT DO NOTHING" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" vertex="1" parent="1">
+          <mxGeometry x="250" y="156" width="320" height="48" as="geometry" />
+        </mxCell>
+        <!-- step 3: BEGIN tx -->
+        <mxCell id="s3a" value="BEGIN tx" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="255" y="214" width="70" height="20" as="geometry" />
+        </mxCell>
+        <!-- step 4: done-CAS -->
+        <mxCell id="s4" style="endArrow=block;endFill=1;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="162" as="sourcePoint" />
-            <mxPoint x="470" y="162" as="targetPoint" />
+            <mxPoint x="290" y="262" as="sourcePoint" />
+            <mxPoint x="470" y="262" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="s2l" value="CAS: Pending→Parsing, worker_id=A, last_heartbeat_at=now()" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="265" y="144" width="230" height="16" as="geometry" />
+        <mxCell id="s4l" value="done-CAS: UPDATE SET status=&#39;Done&#39; WHERE id=42 AND status=&#39;Prev&#39; RETURNING id" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="250" y="244" width="320" height="16" as="geometry" />
         </mxCell>
-        <!-- step 3 -->
-        <mxCell id="s3" style="endArrow=block;endFill=1;dashed=1;" edge="1" parent="1">
+        <!-- step 5: returning won -->
+        <mxCell id="s5" style="endArrow=block;endFill=1;dashed=1;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="470" y="192" as="sourcePoint" />
-            <mxPoint x="290" y="192" as="targetPoint" />
+            <mxPoint x="470" y="292" as="sourcePoint" />
+            <mxPoint x="290" y="292" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="s3l" value="RETURNING id (won)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="265" y="194" width="230" height="16" as="geometry" />
+        <mxCell id="s5l" value="RETURNING id (won) — only the winner continues" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="250" y="294" width="320" height="16" as="geometry" />
         </mxCell>
-        <!-- heartbeat annotation -->
-        <mxCell id="s4" value="HeartbeatLoop starts (every 10s)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="300" y="222" width="200" height="22" as="geometry" />
-        </mxCell>
-        <!-- step 5 -->
-        <mxCell id="s5" style="endArrow=block;endFill=1;" edge="1" parent="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="268" as="sourcePoint" />
-            <mxPoint x="470" y="268" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="s5l" value="UPDATE last_heartbeat_at=now()  (repeats every 10s)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="265" y="250" width="230" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="s5b" value="... work continues ..." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=2;" vertex="1" parent="1">
-          <mxGeometry x="265" y="286" width="230" height="16" as="geometry" />
-        </mxCell>
-        <!-- step 6 -->
+        <!-- step 6: outbox insert (gated on CAS win) -->
         <mxCell id="s6" style="endArrow=block;endFill=1;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="326" as="sourcePoint" />
-            <mxPoint x="470" y="326" as="targetPoint" />
+            <mxPoint x="290" y="324" as="sourcePoint" />
+            <mxPoint x="470" y="324" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="s6l" value="CAS: Parsing→Finalized" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="265" y="308" width="230" height="16" as="geometry" />
+        <mxCell id="s6l" value="INSERT outbox(next.queue, payload, published_at=NULL) + counter increment (same tx)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="250" y="316" width="320" height="16" as="geometry" />
         </mxCell>
-        <!-- step 7 -->
-        <mxCell id="s7" style="endArrow=block;endFill=1;" edge="1" parent="1">
+        <!-- step 7: commit -->
+        <mxCell id="s7" style="endArrow=block;endFill=1;dashed=1;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="364" as="sourcePoint" />
-            <mxPoint x="110" y="364" as="targetPoint" />
+            <mxPoint x="470" y="354" as="sourcePoint" />
+            <mxPoint x="290" y="354" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="s7l" value="Ack message" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="110" y="346" width="180" height="16" as="geometry" />
+        <mxCell id="s7l" value="COMMIT ✓" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="356" width="320" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="s8" value="Complete ✓" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="240" y="398" width="120" height="28" as="geometry" />
+        <!-- step 8: ack (after commit) -->
+        <mxCell id="s8" style="endArrow=block;endFill=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="290" y="388" as="sourcePoint" />
+            <mxPoint x="110" y="388" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s8l" value="Ack message (ONLY after COMMIT)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="110" y="370" width="180" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="s9" value="Complete ✓" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="240" y="420" width="120" height="28" as="geometry" />
         </mxCell>
         <!-- config note -->
-        <mxCell id="cfg" value="Per-phase config (phase_config table):&#xa;  heartbeat_interval_s  = 10   (all phases; tunable per row)&#xa;  sweeper_threshold_s   = 30   (= 3 × heartbeat_interval)&#xa;  max_retries           = 5" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666;fontFamily=Courier New;fontSize=10;align=left;" vertex="1" parent="1">
-          <mxGeometry x="60" y="460" width="400" height="68" as="geometry" />
+        <mxCell id="cfg" value="Recovery config (deployment / broker / app — NOT a DB heartbeat):&#xa;  Client-side WATCHDOG = CancellationTokenSource(maxStepDuration ≈ 3–4× phase p99)&#xa;     → primary hung-worker reclaim; faster than consumer_timeout; seconds (see Page 4)&#xa;  RabbitMQ consumer_timeout = 30min default  (quorum; coarse backstop)&#xa;  AMQP connection heartbeat = 60s  (dead after 2 missed)&#xa;  prefetch = 1 per consumer channel&#xa;  quorum delivery-limit = 20  (NO default on 3.13 — set via policy; + app max_retries=5)&#xa;phase_config table:  max_retries = 5  (no heartbeat/sweeper columns)&#xa;Queues: QUORUM only — RabbitMQ 3.13, 3-node cluster per network" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666;fontFamily=Courier New;fontSize=10;align=left;" vertex="1" parent="1">
+          <mxGeometry x="60" y="452" width="600" height="146" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
-  <diagram name="2 — Crash Recovery (Sweeper)" id="sweeper-recovery">
-    <mxGraphModel dx="2305" dy="1202" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="980" math="0" shadow="0">
+  <diagram name="2 — Crash Recovery (Broker Redelivery)" id="redelivery-recovery">
+    <mxGraphModel dx="1921" dy="1002" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="820" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="t2" value="Crash Recovery: Worker crashes → Rabbit redelivers → CAS fails → Sweeper rescues" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=14;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="60" y="8" width="900" height="26" as="geometry" />
+        <mxCell id="t2" value="Crash Recovery (pre-COMMIT): Worker crashes → channel closes → RabbitMQ requeues → another worker reprocesses" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=14;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="8" width="920" height="26" as="geometry" />
         </mxCell>
         <mxCell id="a-rb" value="RabbitMQ" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" parent="1" vertex="1">
           <mxGeometry x="60" y="44" width="100" height="36" as="geometry" />
@@ -133,199 +134,121 @@
         <mxCell id="a-wb" value="Worker B / C" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" parent="1" vertex="1">
           <mxGeometry x="600" y="44" width="100" height="36" as="geometry" />
         </mxCell>
-        <mxCell id="a-sw" value="Sweeper" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="780" y="44" width="100" height="36" as="geometry" />
-        </mxCell>
         <mxCell id="ll-rb" style="endArrow=none;dashed=1;strokeColor=#d6b656;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="110" y="80" as="sourcePoint" />
-            <mxPoint x="110" y="940" as="targetPoint" />
+            <mxPoint x="110" y="620" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-wa" style="endArrow=none;dashed=1;strokeColor=#6c8ebf;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="290" y="80" as="sourcePoint" />
-            <mxPoint x="290" y="940" as="targetPoint" />
+            <mxPoint x="290" y="620" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-pg" style="endArrow=none;dashed=1;strokeColor=#82b366;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="470" y="80" as="sourcePoint" />
-            <mxPoint x="470" y="940" as="targetPoint" />
+            <mxPoint x="470" y="620" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-wb" style="endArrow=none;dashed=1;strokeColor=#6c8ebf;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="650" y="80" as="sourcePoint" />
-            <mxPoint x="650" y="940" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="ll-sw" style="endArrow=none;dashed=1;strokeColor=#9673a6;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="830" y="80" as="sourcePoint" />
-            <mxPoint x="830" y="940" as="targetPoint" />
+            <mxPoint x="650" y="620" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="r1" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="110" y="128" as="sourcePoint" />
-            <mxPoint x="290" y="128" as="targetPoint" />
+            <mxPoint x="110" y="124" as="sourcePoint" />
+            <mxPoint x="290" y="124" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="r1l" value="deliver job-42" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="110" y="110" width="180" height="16" as="geometry" />
+          <mxGeometry x="110" y="106" width="180" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="r2" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="160" as="sourcePoint" />
-            <mxPoint x="470" y="160" as="targetPoint" />
-          </mxGeometry>
+        <mxCell id="r2" value="Worker A: do idempotent work&#xa;(status still &#39;Prev&#39; — no claim flip yet)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="180" y="144" width="220" height="38" as="geometry" />
         </mxCell>
-        <mxCell id="r2l" value="CAS: Pending→Parsing, worker_id=A, hb=now()" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="270" y="142" width="220" height="16" as="geometry" />
+        <mxCell id="r3" value="CRASH ✕ (pre-COMMIT)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="215" y="194" width="150" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="r3" style="endArrow=block;endFill=1;dashed=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="470" y="190" as="sourcePoint" />
-            <mxPoint x="290" y="190" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r3l" value="RETURNING id (won)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="270" y="192" width="220" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r4a" value="HeartbeatLoop starts" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="300" y="218" width="140" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="r4" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="260" as="sourcePoint" />
-            <mxPoint x="470" y="260" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r4l" value="UPDATE last_heartbeat_at=now()  (every 10s)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="270" y="242" width="230" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r5" value="CRASH ✕" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" parent="1" vertex="1">
-          <mxGeometry x="252" y="296" width="100" height="28" as="geometry" />
-        </mxCell>
-        <mxCell id="r5b" value="No ack sent to Rabbit" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="362" y="302" width="160" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r6" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="110" y="356" as="sourcePoint" />
-            <mxPoint x="650" y="356" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r6l" value="redeliver job-42  (no ack received)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="110" y="338" width="540" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r7" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="650" y="394" as="sourcePoint" />
-            <mxPoint x="470" y="394" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r7l" value="CAS WHERE status=&#39;Pending&#39;" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="440" y="376" width="230" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r8" style="endArrow=block;endFill=1;dashed=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="470" y="424" as="sourcePoint" />
-            <mxPoint x="650" y="424" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r8l" value="0 rows  (status=&#39;Parsing&#39; ≠ &#39;Pending&#39;)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="440" y="426" width="240" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r9" value="Ack + exit" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="612" y="454" width="80" height="22" as="geometry" />
-        </mxCell>
-        <mxCell id="r9b" value="Message gone from Rabbit" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="702" y="458" width="180" height="16" as="geometry" />
+        <mxCell id="r3b" value="No ack sent. DB unchanged (row still &#39;Prev&#39;)." style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="372" y="198" width="240" height="16" as="geometry" />
         </mxCell>
         <mxCell id="gap" style="endArrow=none;strokeColor=#CC0000;dashed=1;strokeWidth=2;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="40" y="498" as="sourcePoint" />
-            <mxPoint x="980" y="498" as="targetPoint" />
+            <mxPoint x="30" y="244" as="sourcePoint" />
+            <mxPoint x="970" y="244" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="gapl" value="Sweeper fires every 60s.  Threshold = 3× heartbeat_interval = 30s.  Worst-case recovery = threshold + sweeper_interval = ~90s." style="text;html=1;strokeColor=none;fillColor=#FFE6E6;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
-          <mxGeometry x="100" y="501" width="760" height="24" as="geometry" />
+        <mxCell id="gapl" value="RabbitMQ requeues the unacked delivery when the channel/connection closes. Crash/OOM/redeploy → seconds. Network partition → ~60s (AMQP heartbeat). App deadlock (live conn)&amp;nbsp;&lt;div&gt;→ CLIENT-SIDE WATCHDOG self-cancels in ~maxStepDuration (seconds; faster than consumer_timeout)&amp;nbsp;&lt;/div&gt;&lt;div&gt;— consumer_timeout is the slower broker backstop (see Page 4). No sweeper needed — the row never left &#39;Prev&#39;, so a redelivery simply reprocesses.&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=#FFE6E6;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+          <mxGeometry x="80" y="247" width="840" height="45" as="geometry" />
         </mxCell>
-        <mxCell id="r10" style="endArrow=block;endFill=1;" parent="1" edge="1">
+        <mxCell id="r4" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="830" y="545" as="sourcePoint" />
-            <mxPoint x="470" y="545" as="targetPoint" />
+            <mxPoint x="110" y="306" as="sourcePoint" />
+            <mxPoint x="650" y="306" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="r10l" value="UPDATE status=&#39;Pending&#39; WHERE status=&#39;Parsing&#39; AND hb &lt; now()-30s RETURNING id" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="420" y="527" width="420" height="16" as="geometry" />
+        <mxCell id="r4l" value="redeliver job-42 (unacked → requeued) → Worker C" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="110" y="288" width="540" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="r11" style="endArrow=block;endFill=1;dashed=1;" parent="1" edge="1">
+        <mxCell id="r5" value="Worker C: re-run idempotent work&#xa;(deterministic names → identical bytes)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="540" y="326" width="220" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="470" y="575" as="sourcePoint" />
-            <mxPoint x="830" y="575" as="targetPoint" />
+            <mxPoint x="650" y="396" as="sourcePoint" />
+            <mxPoint x="470" y="396" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="r11l" value="RETURNING [42]  (stale job reset to Pending)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="420" y="577" width="420" height="16" as="geometry" />
+        <mxCell id="r6l" value="done-CAS: SET status=&#39;Done&#39; WHERE id=42 AND status=&#39;Prev&#39;" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="430" y="378" width="290" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="r12" style="endArrow=block;endFill=1;" parent="1" edge="1">
+        <mxCell id="r7" style="endArrow=block;endFill=1;dashed=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="830" y="612" as="sourcePoint" />
-            <mxPoint x="470" y="612" as="targetPoint" />
+            <mxPoint x="470" y="426" as="sourcePoint" />
+            <mxPoint x="650" y="426" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="r12l" value="INSERT outbox(queue=prev.queue, payload) — durable, NOT a direct publish" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="470" y="594" width="400" height="16" as="geometry" />
+        <mxCell id="r7l" value="RETURNING id (won — state was still &#39;Prev&#39;)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="430" y="428" width="290" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="r12b" style="endArrow=block;endFill=1;" parent="1" edge="1">
+        <mxCell id="r8" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="470" y="648" as="sourcePoint" />
-            <mxPoint x="110" y="648" as="targetPoint" />
+            <mxPoint x="650" y="458" as="sourcePoint" />
+            <mxPoint x="470" y="458" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="r12bl" value="OutboxRelay publishes NEW job-42 (publisher-confirm; see Diagram 3)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="110" y="632" width="540" height="16" as="geometry" />
+        <mxCell id="r8l" value="INSERT outbox(next.queue) + counter; COMMIT ✓" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="430" y="440" width="290" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="r13" style="endArrow=block;endFill=1;" parent="1" edge="1">
+        <mxCell id="r9" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="110" y="684" as="sourcePoint" />
-            <mxPoint x="650" y="684" as="targetPoint" />
+            <mxPoint x="650" y="492" as="sourcePoint" />
+            <mxPoint x="110" y="492" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="r13l" value="deliver job-42 (new message) → Worker C" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="110" y="668" width="540" height="16" as="geometry" />
+        <mxCell id="r9l" value="Ack message (after COMMIT)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="110" y="474" width="540" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="r14" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="650" y="720" as="sourcePoint" />
-            <mxPoint x="470" y="720" as="targetPoint" />
-          </mxGeometry>
+        <mxCell id="r10" value="Process + Complete ✓" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="590" y="520" width="150" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="r14l" value="CAS WHERE status=&#39;Pending&#39; → SUCCESS" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="440" y="702" width="240" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="r15" value="Process + Complete ✓" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="590" y="754" width="140" height="28" as="geometry" />
-        </mxCell>
-        <mxCell id="why" value="Why sweeper-only (no expanded CAS):&#xa;• Batch system — 24h SLA. ~90s recovery latency is negligible.&#xa;• Simpler CAS. No per-phase threshold tuning for steal logic.&#xa;• Expanded CAS adds complexity without meaningful gain here.&#xa;• Add it later only if recovery latency becomes a real constraint." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="1" vertex="1">
-          <mxGeometry x="60" y="800" width="560" height="76" as="geometry" />
-        </mxCell>
-        <mxCell id="sweeper-note" value="Note: Sweeper resets ONLY:&#xa;  status → &#39;Pending&#39;&#xa;  worker_id → NULL&#xa;  last_heartbeat_at → NULL&#xa;It does NOT reset manifest_written.&#xa;(manifest_written is sticky once TRUE)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="1" vertex="1">
-          <mxGeometry x="854" y="531" width="280" height="82" as="geometry" />
+        <mxCell id="why" value="Why broker-redelivery + client-side watchdog (no per-phase sweeper):&#xa;• Crash/OOM/redeploy recover in SECONDS — faster than the old ~90s sweeper, because there is no &#39;-ing&#39; row to block the redelivery from reprocessing.&#xa;• Idempotent consumers are mandatory under at-least-once regardless, so nothing new is required.&#xa;• App-deadlock-with-live-connection: the client-side WATCHDOG self-cancels in ~maxStepDuration (primary deadlock reclaim — faster than consumer_timeout). Page 4.&#xa;• Job-level backstops if a row is still stranded: TimeoutSweeper (B) and files_manifest_written_count counter + per-file DLQ-terminal + TimeoutSweeper-A (A, §3.7).&#xa;• A concurrent duplicate (watchdog/timeout requeue while A is still alive) re-runs idempotently and loses the done-CAS → harmless." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="40" y="560" width="920" height="104" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram name="3 — Post-COMMIT Crash (Outbox)" id="outbox-recovery">
-    <mxGraphModel dx="1317" dy="687" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="1000" math="0" shadow="0">
+    <mxGraphModel dx="1921" dy="1002" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="780" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="t3" value="Post-COMMIT Crash: COMMIT succeeds → crash → Rabbit publish never happens → Outbox Relay rescues" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=14;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="40" y="8" width="880" height="26" as="geometry" />
+        <mxCell id="t3" value="Post-COMMIT Crash: COMMIT succeeds → crash before ack/publish → Outbox Relay publishes the durable row" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=14;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="8" width="900" height="26" as="geometry" />
         </mxCell>
         <mxCell id="a-rb" value="RabbitMQ&#xa;(Inbound)" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" parent="1" vertex="1">
           <mxGeometry x="40" y="44" width="100" height="36" as="geometry" />
@@ -345,31 +268,31 @@
         <mxCell id="ll-rb" style="endArrow=none;dashed=1;strokeColor=#d6b656;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="90" y="80" as="sourcePoint" />
-            <mxPoint x="90" y="840" as="targetPoint" />
+            <mxPoint x="90" y="640" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-wa" style="endArrow=none;dashed=1;strokeColor=#6c8ebf;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="250" y="80" as="sourcePoint" />
-            <mxPoint x="250" y="840" as="targetPoint" />
+            <mxPoint x="250" y="640" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-pg" style="endArrow=none;dashed=1;strokeColor=#82b366;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="430" y="80" as="sourcePoint" />
-            <mxPoint x="430" y="840" as="targetPoint" />
+            <mxPoint x="430" y="640" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-or" style="endArrow=none;dashed=1;strokeColor=#9673a6;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="620" y="80" as="sourcePoint" />
-            <mxPoint x="620" y="840" as="targetPoint" />
+            <mxPoint x="620" y="640" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="ll-rbn" style="endArrow=none;dashed=1;strokeColor=#d6b656;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="815" y="80" as="sourcePoint" />
-            <mxPoint x="815" y="840" as="targetPoint" />
+            <mxPoint x="815" y="640" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="p1" style="endArrow=block;endFill=1;" parent="1" edge="1">
@@ -381,107 +304,268 @@
         <mxCell id="p1l" value="deliver job-42" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
           <mxGeometry x="90" y="102" width="160" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="p2" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="250" y="152" as="sourcePoint" />
-            <mxPoint x="430" y="152" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="p2l" value="CAS: Pending→Parsing, worker_id=A, hb=now()  (wins)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+        <mxCell id="p2" value="Worker A: do idempotent work (status still &#39;Prev&#39;)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
           <mxGeometry x="230" y="134" width="220" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="p3" value="... do work (heartbeat running) ..." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
-          <mxGeometry x="230" y="172" width="220" height="16" as="geometry" />
+        <mxCell id="p3a" value="BEGIN tx" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="215" y="158" width="70" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="p4a" value="BEGIN tx" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="260" y="198" width="70" height="20" as="geometry" />
+        <mxCell id="p3" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="250" y="200" as="sourcePoint" />
+            <mxPoint x="430" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3l" value="done-CAS: SET status=&#39;Done&#39; WHERE status=&#39;Prev&#39; (wins)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="220" y="182" width="240" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p4" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="250" y="232" as="sourcePoint" />
-            <mxPoint x="430" y="232" as="targetPoint" />
+            <mxPoint x="250" y="230" as="sourcePoint" />
+            <mxPoint x="430" y="230" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="p4l" value="CAS: Parsing→Finalized" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="230" y="214" width="220" height="16" as="geometry" />
-        </mxCell>
-        <mxCell id="p4b" style="endArrow=block;endFill=1;" parent="1" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="250" y="260" as="sourcePoint" />
-            <mxPoint x="430" y="260" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="p4bl" value="INSERT outbox(queue=&#39;next.queue&#39;, payload, published_at=NULL)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="230" y="242" width="220" height="16" as="geometry" />
+        <mxCell id="p4l" value="INSERT outbox(queue=&#39;next.queue&#39;, payload, published_at=NULL)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="220" y="212" width="240" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p5" style="endArrow=block;endFill=1;dashed=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="430" y="290" as="sourcePoint" />
-            <mxPoint x="250" y="290" as="targetPoint" />
+            <mxPoint x="430" y="260" as="sourcePoint" />
+            <mxPoint x="250" y="260" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="p5l" value="COMMIT ✓  (row advanced + outbox row durable)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="230" y="292" width="220" height="16" as="geometry" />
+          <mxGeometry x="220" y="262" width="240" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p6" value="CRASH ✕" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" parent="1" vertex="1">
-          <mxGeometry x="212" y="324" width="100" height="28" as="geometry" />
+          <mxGeometry x="200" y="294" width="100" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="p6b" value="Dies between COMMIT and Rabbit publish.  No ack sent." style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="322" y="330" width="280" height="16" as="geometry" />
+        <mxCell id="p6b" value="Dies between COMMIT and ack.  Inbound never acked." style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="310" y="300" width="300" height="16" as="geometry" />
         </mxCell>
-        <mxCell id="p7" value="Rabbit redelivers inbound to next worker.  New worker: CAS WHERE status=&#39;Pending&#39; → 0 rows (status already &#39;Finalized&#39;) → ack + exit.  Inbound message consumed.  No downstream message ever published." style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;" parent="1" vertex="1">
-          <mxGeometry x="40" y="370" width="931" height="34" as="geometry" />
+        <mxCell id="p7" value="RabbitMQ redelivers the inbound message. New worker: done-CAS WHERE status=&#39;Prev&#39; → 0 rows (status already &#39;Done&#39;) → ack + exit. Inbound consumed. &#xa;The downstream message was never published by the worker — but the outbox row is durable." style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="40" y="340" width="931" height="40" as="geometry" />
         </mxCell>
         <mxCell id="gap" style="endArrow=none;strokeColor=#CC0000;dashed=1;strokeWidth=2;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="30" y="422" as="sourcePoint" />
-            <mxPoint x="920" y="422" as="targetPoint" />
+            <mxPoint x="30" y="398" as="sourcePoint" />
+            <mxPoint x="970" y="398" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="gapl" value="Outbox Relay polls every ~500ms.  No age threshold needed — any row with published_at IS NULL is pending." style="text;html=1;strokeColor=none;fillColor=#FFE6E6;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
-          <mxGeometry x="100" y="425" width="700" height="24" as="geometry" />
+        <mxCell id="gapl" value="Outbox Relay polls every ~500ms.  No age threshold — any row with published_at IS NULL is pending.  ~500ms recovery." style="text;html=1;strokeColor=none;fillColor=#FFE6E6;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+          <mxGeometry x="100" y="401" width="760" height="24" as="geometry" />
         </mxCell>
         <mxCell id="p8" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="620" y="462" as="sourcePoint" />
-            <mxPoint x="430" y="462" as="targetPoint" />
+            <mxPoint x="620" y="446" as="sourcePoint" />
+            <mxPoint x="430" y="446" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="p8l" value="SELECT id, queue, payload FROM outbox WHERE published_at IS NULL FOR UPDATE SKIP LOCKED LIMIT 100" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="390" y="444" width="250" height="16" as="geometry" />
+        <mxCell id="p8l" value="SELECT ... FROM outbox WHERE published_at IS NULL FOR UPDATE SKIP LOCKED LIMIT 100" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="390" y="428" width="250" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p9" style="endArrow=block;endFill=1;dashed=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="430" y="492" as="sourcePoint" />
-            <mxPoint x="620" y="492" as="targetPoint" />
+            <mxPoint x="430" y="476" as="sourcePoint" />
+            <mxPoint x="620" y="476" as="targetPoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="p9l" value="RETURNING [outbox row for job-42]" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="390" y="494" width="250" height="16" as="geometry" />
+          <mxGeometry x="390" y="478" width="250" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p10" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="620" y="528" as="sourcePoint" />
-            <mxPoint x="815" y="528" as="targetPoint" />
+            <mxPoint x="620" y="512" as="sourcePoint" />
+            <mxPoint x="815" y="512" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="p10l" value="publish next-step message + publisher-confirm" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="600" y="510" width="240" height="16" as="geometry" />
+        <mxCell id="p10l" value="publish next-step message + publisher-confirm (sync)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="600" y="494" width="240" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p11" style="endArrow=block;endFill=1;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="620" y="562" as="sourcePoint" />
-            <mxPoint x="430" y="562" as="targetPoint" />
+            <mxPoint x="620" y="546" as="sourcePoint" />
+            <mxPoint x="430" y="546" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="p11l" value="UPDATE outbox SET published_at=now() WHERE id=$1" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="390" y="544" width="250" height="16" as="geometry" />
+        <mxCell id="p11l" value="UPDATE outbox SET published_at=now() WHERE id=$1  (only after confirm)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="390" y="528" width="260" height="16" as="geometry" />
         </mxCell>
         <mxCell id="p12" value="Next worker triggered ✓" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="710" y="594" width="170" height="28" as="geometry" />
+          <mxGeometry x="710" y="578" width="170" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="cmp" value="Recovery comparison for post-COMMIT crash:&#xa;  Without outbox:  sweeper guesses from age heuristic (updated_at &lt; now()-Ns) → ~90s recovery, requires per-phase threshold tuning, gaps exist in current plan&#xa;  With outbox:     relay detects published_at IS NULL → ~500ms recovery, no tuning, uniform across all workers&#xa;&#xa;Probability at 1M jobs/month: ~3–6 events/month (0.1–0.2/day).  Each = silent stuck job without any recovery mechanism." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="1" vertex="1">
-          <mxGeometry x="40" y="650" width="760" height="82" as="geometry" />
+        <mxCell id="cmp" value="Why the outbox is still required (independent of the sweeper removal):&#xa;• The done-CAS + COMMIT advances the row, but the downstream Rabbit publish is a SEPARATE side effect. &#xa;   A crash between COMMIT and publish would otherwise strand the job — the inbound message redelivers but short-circuits (status already &#39;Done&#39;), so it never re-publishes downstream.&#xa;• Outbox closes that gap: relay detects published_at IS NULL → ~500ms recovery, no tuning, uniform across all workers. Publisher-confirm is mandatory.&#xa;• At 1M jobs/month this post-COMMIT window is hit ~3–6×/month — each would be a silently stuck job without the outbox." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="40" y="624" width="900" height="96" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="4 — Deadlock Recovery (Watchdog + A-Sweeper)" id="watchdog-sweeper-recovery">
+    <mxGraphModel dx="1577" dy="865" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1040" pageHeight="880" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="d4-t" value="Deadlock / hung-worker recovery: client-side WATCHDOG (primary, seconds) + TimeoutSweeper-A (job-level SLA backstop)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=14;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="20" y="8" width="1000" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-rb" value="RabbitMQ" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="40" y="44" width="110" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-wa" value="Worker A (hangs)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="220" y="44" width="110" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-pg" value="PostgreSQL" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="400" y="44" width="110" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-wc" value="Worker C" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="600" y="44" width="110" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-sw" value="TimeoutSweeper-A&#xa;(on OutboxRelay-A replica)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="820" y="44" width="180" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-ll-rb" style="endArrow=none;dashed=1;strokeColor=#d6b656;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="95" y="80" as="sourcePoint" />
+            <mxPoint x="95" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-ll-wa" style="endArrow=none;dashed=1;strokeColor=#6c8ebf;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="275" y="80" as="sourcePoint" />
+            <mxPoint x="275" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-ll-pg" style="endArrow=none;dashed=1;strokeColor=#82b366;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="455" y="80" as="sourcePoint" />
+            <mxPoint x="455" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-ll-wc" style="endArrow=none;dashed=1;strokeColor=#6c8ebf;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="80" as="sourcePoint" />
+            <mxPoint x="655" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-ll-sw" style="endArrow=none;dashed=1;strokeColor=#9673a6;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="910" y="80" as="sourcePoint" />
+            <mxPoint x="910" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-f1" value="① WATCHDOG — primary deadlock reclaim (reclaims faster than consumer_timeout; seconds)" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=12;fontStyle=1;fontColor=#2D7600;" parent="1" vertex="1">
+          <mxGeometry x="40" y="90" width="700" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d1" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="95" y="134" as="sourcePoint" />
+            <mxPoint x="275" y="134" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-d1l" value="deliver job-42 (prefetch=1)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="95" y="116" width="180" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d2" value="Worker A: start CancellationTokenSource(maxStepDuration ≈ 3–4× phase p99); begin idempotent work (status still &#39;Prev&#39;)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="165" y="150" width="543" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d3" value="DEADLOCK / hang ✕  (connection alive — broker would otherwise wait the full consumer_timeout)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="165" y="196" width="473" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d4" value="Watchdog fires at maxStepDuration → token cancelled → ProcessMessageAsync throws OperationCanceledException → classified transient" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="150" y="242" width="681" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d5" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="275" y="308" as="sourcePoint" />
+            <mxPoint x="95" y="308" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-d5l" value="nack(requeue=false) → channel closes (or retry-queue hop); x-death++ feeds max_retries=5" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="95" y="290" width="320" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-gap1" style="endArrow=none;strokeColor=#2D7600;dashed=1;strokeWidth=2;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="30" y="330" as="sourcePoint" />
+            <mxPoint x="1010" y="330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-gap1l" value="RabbitMQ requeues the unacked delivery in SECONDS — no consumer_timeout wait. The row never left &#39;Prev&#39;, so a fresh worker just reprocesses." style="text;html=1;strokeColor=none;fillColor=#E6FFE6;align=center;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+          <mxGeometry x="120" y="333" width="800" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d6" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="95" y="380" as="sourcePoint" />
+            <mxPoint x="655" y="380" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-d6l" value="redeliver job-42 → Worker C" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="95" y="362" width="560" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d7" value="Worker C: re-run idempotent work (deterministic names → identical bytes)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="545" y="396" width="336" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d8" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="464" as="sourcePoint" />
+            <mxPoint x="455" y="464" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-d8l" value="done-CAS SET status=&#39;Done&#39; WHERE status=&#39;Prev&#39; (wins) + outbox + counter; COMMIT ✓" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="415" y="446" width="320" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d10" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="496" as="sourcePoint" />
+            <mxPoint x="95" y="496" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-d10l" value="Ack (after COMMIT)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="95" y="478" width="560" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-d11" value="Reclaimed ✓ (seconds)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="585" y="520" width="170" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-gap2" style="endArrow=none;strokeColor=#CC0000;dashed=1;strokeWidth=2;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="30" y="566" as="sourcePoint" />
+            <mxPoint x="1010" y="566" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-f2" value="② BACKSTOP — watchdog-evading hang OR wedged dead-letter target → a source_file is stranded non-terminal forever" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=12;fontStyle=1;fontColor=#B85450;" parent="1" vertex="1">
+          <mxGeometry x="40" y="572" width="960" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-s0" value="PostgreSQL state: source_file stuck at e.g. &#39;Converted&#39; (never reached terminal) &#xa;→ files_manifest_written_count &lt; total_source_files → job NOT &#39;AllManifestsWritten&#39;." style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="290" y="598" width="380" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-s1" value="TimeoutSweeper-A: cron every 60s on the SWEEPER_ENABLED replica. &#xa;No -ing states, no per-row heartbeat, no schema change." style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="680" y="598" width="333" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-s2" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="910" y="664" as="sourcePoint" />
+            <mxPoint x="455" y="664" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-s2l" value="SELECT job WHERE status NOT IN (&#39;AllManifestsWritten&#39;,&#39;Failed&#39;) AND now()-created_at &gt; 30min  FOR UPDATE SKIP LOCKED" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="445" y="646" width="480" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-s3" value="Write-before-commit (§3.7): write Failed mini-manifest {status:&#39;Failed&#39;, failureReason:&#39;SweeperTimeout&#39;, chunks:[]} &#xa;to the manifest outbox dir BEFORE the commit, so NetworkB always learns the file failed." style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="120" y="676" width="512" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-s4" style="endArrow=block;endFill=1;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="910" y="736" as="sourcePoint" />
+            <mxPoint x="455" y="736" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="d4-s4l" value="UPDATE source_file SET status=&#39;Failed&#39; WHERE NOT terminal (CAS — exactly-once); counter += k → flips job to &#39;AllManifestsWritten&#39; (same tx); COMMIT" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="445" y="718" width="480" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-s5" value="NetworkB receives the Failed mini-manifest → expected_file created terminal, no chunks awaited. Job converges instead of hanging indefinitely. ✓" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="120" y="744" width="780" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="d4-foot" value="• Watchdog (①) is the common-case reclaim — seconds, faster than consumer_timeout (the coarse quorum backstop).&#xa;• TimeoutSweeper-A (②) is the rare-case SLA backstop: a hang the watchdog can&#39;t catch, or a message wedged behind a full/unavailable dead-letter target. Defense-in-depth (RabbitMQ 3.13, quorum).&#xa;• Both gated by the terminal-status CAS → exactly-once even if a slow-but-healthy worker finishes the same file concurrently (one of {worker, sweeper} flips it).&#xa;• Mirrors Network B §5.7 TimeoutSweeper; SLA = 30 min from job.created_at (align with B)." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;" parent="1" vertex="1">
+          <mxGeometry x="20" y="788" width="1000" height="80" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

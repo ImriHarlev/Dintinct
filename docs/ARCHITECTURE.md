@@ -2,9 +2,11 @@
 
 > Cross-network file processing pipeline: **Network A** decomposes packages → **Proxy** (closed, third-party) ships files → **Network B** assembles. Designed for ~1M jobs/month, horizontal scale, crash resilience, no orchestrator framework.
 >
+> **Stack (pinned):** **RabbitMQ 3.13** with **quorum queues** ([docs](https://www.rabbitmq.com/docs/3.13/quorum-queues)), **PostgreSQL 16** ([docs](https://www.postgresql.org/docs/16/index.html)), .NET 9 workers on OpenShift. RabbitMQ runs as a **3-node cluster per network** (odd-sized for Raft majority — the minimum that gives quorum its replication/HA guarantee; a single node is a broker SPOF, see [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §20).
+>
 > This document is aligned with the following diagrams and is authoritative together with them:
 > - [`architecture-v3.drawio`](architecture-v3.drawio) — service topology
-> - [`cas-heartbeat-recovery.drawio`](cas-heartbeat-recovery.drawio) — normal flow, crash recovery (sweeper), post-COMMIT crash (outbox)
+> - [`cas-heartbeat-recovery.drawio`](cas-heartbeat-recovery.drawio) — normal flow, crash recovery (broker redelivery), post-COMMIT crash (outbox), and deadlock recovery (client-side watchdog + `TimeoutSweeper-A` backstop, page 4)
 > - [`chunk-flow.drawio`](chunk-flow.drawio) — 5-branch ProxyListener flow: chunk/job-header/file-manifest buffering, inline drains, ERROR sentinels
 > - [`worker-exception-handling.drawio`](worker-exception-handling.drawio) — transient vs permanent failure paths
 
@@ -14,9 +16,9 @@
 
 1. **No orchestration framework.** Replace Temporal with explicit, idempotent step-services coordinated by RabbitMQ + PostgreSQL.
 2. **Per-network isolation.** Each side has its own Postgres and RabbitMQ; A and B never share infra or talk directly. The Proxy is the only bridge — over filesystem (data + manifest dirs) and the proxy's RabbitMQ message.
-3. **Crash-safe via per-row status CAS + heartbeat sweeper.** Idempotency rests on one primitive: every state transition is `UPDATE row SET status='Next', worker_id=$me, last_heartbeat_at=now() WHERE id=$1 AND status='Prev' RETURNING id` — only the winner does work; redeliveries are no-ops. A heartbeat loop refreshes `last_heartbeat_at` every 10s; a per-phase sweeper resets rows whose heartbeat is older than 30s (worker died) and re-publishes them.
+3. **Crash-safe via per-row status CAS + broker redelivery.** Idempotency rests on one primitive: every step ends with a single done-state transition `UPDATE row SET status='Done' WHERE id=$1 AND status='Prev' RETURNING id` — only the CAS winner publishes the next step; redeliveries and concurrent duplicate work are no-ops. There are **no intermediate `-ing` states, no row-heartbeat loop, and no per-phase sweeper.** Recovery is the message broker's job: an unacked message is automatically requeued when the consumer's channel/connection closes (crash → seconds; network death → ~60s via the AMQP connection heartbeat; app deadlock → up to RabbitMQ `consumer_timeout`). See §3.3 for the full model and calibration.
 4. **Transactional outbox for next-step publishes — both A and B.** The DB commit and the downstream Rabbit publish are decoupled via an `outbox` table. The worker inserts the next-step message into `outbox` in the same transaction as the state flip; a separate `OutboxRelay` polls and publishes with publisher-confirm, marking `published_at=now()`. This closes the "COMMIT succeeded, crash before publish" gap.
-5. **Per-file batch on NetworkB, chunks read in-place.** Each file finalizes the moment all its chunks are present — no global package wait. Chunks arriving before their manifest are buffered in `inbox` with `published=FALSE`; when the manifest arrives, Assembly drains the buffered rows inline. **Chunk bytes are NEVER copied** — Assembly reads chunks directly from the proxy delivery dir during concat.
+5. **Per-file batch on NetworkB, chunks read in-place.** Each file finalizes the moment all its chunks are present — no global package wait. Chunks arriving before their manifest are buffered in `inbox` with `published=FALSE`; when the manifest arrives, Assembly drains the buffered rows inline. **Chunk bytes are NEVER copied to a work dir** — Assembly reads chunks directly from the proxy delivery dir during concat. Immediately after the assembling COMMIT, Assembly best-effort deletes the chunk files it just consumed from the proxy delivery dir (per assembled file), freeing disk incrementally rather than at job end; delete failures are ignored (Reporter sweeps any remainder on terminal job, and the proxy self-cleans days-old leftovers as a final backstop).
 6. **Defer scale machinery until metrics demand it.** No partitioning, no consistent-hash routing, no leader-elected sweepers on day one.
 7. **Business logic preserved, plumbing replaced.** Splitters, converters, assemblers, reverse-converters remain. What changes is *how* they are dispatched and tracked.
 8. **Boundaries are immutable.** Proxy rabbit message, `StatusCallbackPayload`, final CSV format, and `IngestionRequestPayload` are contracts and do not change.
@@ -65,96 +67,22 @@ Key flow changes vs. v2: **Prepare** writes a `{job_id}.job.json` job-header to 
 | 2 | **Ingestion.FolderWatcher** | Polls watched directories; on stable file, builds payload, same insert+outbox as API. |
 | 3 | **Ingestion.RabbitBridge** | Consumes external Rabbit queue carrying `IngestionRequestPayload`; same insert+outbox as API. |
 | 4 | **Ingestion.RequestFileWatcher** | Watches request-file drop folder; reads JSON, same insert+outbox as API. |
-| 5 | **Prepare.Worker** | Consumes `jobs.created`. Claims via CAS (`Created→Preparing`). Extracts archives recursively, lists files, records `source_file` rows per file, inserts one `outbox(queue='files.convert', payload)` per file. After final CAS `Preparing→Prepared`, writes `{job_id}.job.json` (job header) to the manifest outbox dir via safe-write protocol. The job header carries all metadata NB needs to create a job row before any file-manifests arrive (see §3.6). |
-| 6 | **Convert.Worker** | Consumes `files.convert`. Claims via CAS (`source_file.status Pending→Converting`). Runs `IFileConverter` (1→1), sets `applied_conversion` + `converted_relative_path` on the `source_file`, final CAS `Converting→Converted`, inserts one `outbox(queue='files.split', payload)`. |
-| 7 | **Split.Worker** | Consumes `files.split`. Claims via CAS (`Pending→Splitting`). Splits per proxy rules, records `chunk` rows, writes chunk bytes to data outbox dir. After per-converted-file completion CAS, writes `{job_id}_{source_file_id}.file.json` (per-file mini-manifest) to manifest outbox dir via safe-write protocol — one per source file, written immediately after that file completes (or on permanent failure, written BEFORE committing terminal status to DB). Updates `source_file.manifest_written` flag and `job.files_manifest_written_count` counter via gated CAS; when counter reaches `total_source_files`, flips `job.status='AllManifestsWritten'`. No single end-of-job manifest; no ManifestSweeper. |
+| 5 | **Prepare.Worker** | Consumes `jobs.created`. Extracts archives recursively, lists files, records `source_file` rows per file, inserts one `outbox(queue='files.convert', payload)` per file. Final done-CAS `job.status Created→Prepared` (gates the outbox inserts). After COMMIT, writes `{job_id}.job.json` (job header) to the manifest outbox dir via safe-write protocol. The job header carries all metadata NB needs to create a job row before any file-manifests arrive (see §3.6). |
+| 6 | **Convert.Worker** | Consumes `files.convert`. Resolves the per-`callingSystemId` `conversion_rule` for the file's `original_format` (default-fallback resolution, §6.1), runs `IFileConverter` (1→1) for the rule's `required_conversion`, sets `applied_conversion` + `converted_relative_path` on the `source_file`, and **snapshots** the rule's `reverse_conversion` + `file_size_limit_mb` onto the `source_file` (frozen here, so Split and NB see a stable rule even if config changes mid-job). Done-CAS `source_file.status Pending→Converted`, inserts one `outbox(queue='files.split', payload)`. |
+| 7 | **Split.Worker** | Consumes `files.split`. Splits into chunks sized by the `source_file`'s snapshotted `file_size_limit_mb` (max bytes per chunk; from the per-`callingSystemId` `conversion_rule`), records `chunk` rows (`ON CONFLICT DO NOTHING`), writes chunk bytes to data outbox dir. Writes `{job_id}_{source_file_id}.file.json` (per-file mini-manifest) to manifest outbox dir via safe-write protocol — one per source file, written BEFORE the DB commit (or on permanent failure, same write-before-commit). Then done-CAS `source_file.status Converted→Split` (or `Failed`/`NotSupported`); the same CAS-winning tx increments `job.files_manifest_written_count`; when the counter reaches `total_source_files`, flips `job.status='AllManifestsWritten'`. The status CAS is itself the exactly-once gate for the counter (a redelivery or concurrent duplicate hits `WHERE status='Converted'` and no-ops). No single end-of-job manifest; no ManifestSweeper; no `manifest_written` flag. |
 | 8 | **OutboxRelay-A** | Polls `outbox WHERE published_at IS NULL` every ~500ms (`FOR UPDATE SKIP LOCKED`), publishes to RabbitMQ with publisher-confirm, updates `outbox.published_at`. |
 
-> Per-file mini-manifest write is folded into Split on the CAS-winning worker for each source file. The `manifest_written` flag on `source_file` prevents double-counting across retries (sweeper resets status/worker_id/last_heartbeat_at but NOT `manifest_written`).
->
 > **Open trade-off on ingestion services:** the user chose 4 separate ingestion services (one per channel) for crash isolation. Reviewers argued for a single `Ingestion` service hosting all 4 channels as in-process adapters. Recorded in [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §7.
 
-### 3.2 Postgres-A Schema (minimal)
+### 3.2 Postgres-A Schema
 
-```
-job (
-  id UUID PK,
-  external_id TEXT UNIQUE,
-  request_payload JSONB,
-  source_path TEXT,
-  target_path TEXT,
-  target_network TEXT,
-  calling_system_id TEXT,
-  calling_system_name TEXT,
-  answer_type TEXT,
-  answer_location TEXT,
-  package_type TEXT,
-  original_package_name TEXT,
-  total_source_files INT,
-  files_manifest_written_count INT DEFAULT 0,
-  status TEXT,                      -- Created | Preparing | Prepared | Splitting | AllManifestsWritten | Failed
-  worker_id TEXT NULL,
-  last_heartbeat_at TIMESTAMPTZ NULL,
-  created_at TIMESTAMPTZ,
-  updated_at TIMESTAMPTZ
-);
-CREATE INDEX job_status_active ON job(status) WHERE status NOT IN ('AllManifestsWritten','Failed');
-CREATE INDEX job_stale_hb ON job(last_heartbeat_at) WHERE last_heartbeat_at IS NOT NULL;
+Full DDL is canonical in [`DB-SCHEMA.md` → Network A](DB-SCHEMA.md#network-a--postgres-a). Tables: `job`, `source_file`, `chunk`, `nested_archive`, `outbox`, `phase_config`, `config`, `calling_system_config`, `conversion_rule`. (`calling_system_config` + `conversion_rule` hold the per-`callingSystemId` configuration with default fallback — §6.1.) (`converted_file` removed — the converter is 1→1, Q11, so its output folds into `source_file.applied_conversion` + `converted_relative_path`.) State vocabularies referenced below:
 
-source_file (
-  id UUID PK,
-  job_id UUID FK,
-  original_relative_path TEXT,
-  original_format TEXT,
-  applied_conversion TEXT NULL,
-  converted_relative_path TEXT NULL,   -- output of the 1→1 converter; = original_relative_path for pass-through (Q11: converter is always 1→1)
-  status TEXT,                      -- Pending | Converting | Converted | Splitting | Split | Failed | NotSupported
-  failure_reason TEXT NULL,         -- populated when status terminal-Failed/NotSupported; carried into per-file manifest
-  manifest_written BOOLEAN NOT NULL DEFAULT FALSE,  -- set after mini-manifest written; never reset by sweeper
-  worker_id TEXT NULL,
-  last_heartbeat_at TIMESTAMPTZ NULL,
-  UNIQUE (job_id, original_relative_path)
-);
--- converted_file table removed: converter is 1→1 (Q11), so conversion output folds into source_file
---   (applied_conversion + converted_relative_path). Convert and Split both CAS on source_file.
+- `job.status` — `Created | Prepared | AllManifestsWritten | Failed` (done-states only).
+- `source_file.status` — `Pending | Converted | Split | Failed | NotSupported` (done-states only).
+- `job.files_manifest_written_count` — atomic counter; reaching `total_source_files` is the sole `AllManifestsWritten` gate.
 
-chunk (
-  id UUID PK,
-  job_id UUID,
-  source_file_id UUID,
-  index INT,
-  name TEXT,
-  byte_length BIGINT,
-  written_at TIMESTAMPTZ,
-  UNIQUE (job_id, source_file_id, index)
-);
-CREATE INDEX chunk_job ON chunk(job_id);
-
-nested_archive (
-  id UUID PK,
-  job_id UUID FK,
-  archive_relative_path TEXT,
-  parent_archive_id UUID NULL FK
-);
-
-outbox (
-  id BIGSERIAL PK,
-  queue TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  published_at TIMESTAMPTZ NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-CREATE INDEX outbox_pending ON outbox(created_at) WHERE published_at IS NULL;
-
-phase_config (
-  phase TEXT PRIMARY KEY,            -- 'Prepare' | 'Convert' | 'Split' | 'Assembly' | 'ReverseConvert' | 'Report' | 'ProxyListener'
-  heartbeat_interval_s INT NOT NULL DEFAULT 10,
-  sweeper_threshold_s INT NOT NULL DEFAULT 30,   -- 3 × heartbeat_interval
-  max_retries INT NOT NULL DEFAULT 5
-);
-```
-
-Defaults (`heartbeat_interval_s=10`, `sweeper_threshold_s=30`, `max_retries=5`) apply to every phase. Values are tunable per phase via `phase_config` if a specific phase needs different timing.
+`max_retries=5` applies to every phase, tunable per phase via `phase_config`. No per-row heartbeat or sweeper-threshold columns: liveness/recovery is RabbitMQ redelivery + `consumer_timeout` (§3.3), not row sweeping. `phase_config` is the home for any future per-phase override (the §3.3 escape-hatch heartbeat).
 
 ### 3.3 Step contract (applies to every A-worker and every B-worker)
 
@@ -162,22 +90,28 @@ This is the canonical worker loop. Diagram 1 of [`cas-heartbeat-recovery.drawio`
 
 ```
 on inbound message:
+  short-circuit (cheap pre-check, best-effort): if entity.status is already at/past
+     this step's done-state, or job terminal → ack + return   (redelivery / already done)
+
+  do business work IDEMPOTENTLY (outside or before the tx — file IO is not transactional):
+     - write deterministically-named files (.tmp+rename — locally and to the proxy outbox; the proxy ignores .tmp)
+     - INSERT child rows ON CONFLICT DO NOTHING
+     - (for Split: write the per-file mini-manifest to the proxy outbox dir HERE, before the commit)
+
   BEGIN tx
-    short-circuit: if job.status terminal (Failed/Done/TimedOut) → ack + return
-    CAS the row:
+    done-CAS the row (single transition, no intermediate -ing state):
       UPDATE entity
-         SET status='Next', worker_id=$me, last_heartbeat_at=now()
+         SET status='Done'
        WHERE id=$1 AND status='Prev'
        RETURNING id
-    IF CAS returned no row → ack + return (already processed by someone else)
-    start HeartbeatLoop (background task; UPDATE last_heartbeat_at=now() every 10s)
-    do business work (write deterministically-named files; INSERT child rows ON CONFLICT DO NOTHING)
-    final CAS on entity to next state (status='Done-for-this-step')
+    IF CAS returned no row → COMMIT + ack + return   (another worker won; our work was redundant, harmless)
+    increment any per-step counter in THIS tx (gated by the CAS above)
     INSERT INTO outbox(queue, payload, published_at=NULL) for the next-step message(s)
   COMMIT tx
-  stop HeartbeatLoop
   ack inbound
 ```
+
+**No row-heartbeat loop, no intermediate `-ing` state, no per-phase sweeper.** A step "claims" nothing up front — it does its idempotent work, then races to flip the done-state. The done-CAS is the single serialization point: exactly one worker flips `Prev→Done`, and only that worker's counter increment and outbox inserts take effect. A redelivery or a concurrent duplicate that lost the race finds `status='Done'` (or the short-circuit) and no-ops. Because the message is acked only after COMMIT, an unacked message always reflects unfinished work and is safe to redeliver.
 
 **OutboxRelay** (one process pair per network, 2–3 replicas competing) runs continuously:
 
@@ -194,60 +128,74 @@ loop every ~500ms:
     UPDATE outbox SET published_at=now() WHERE id=$1
 ```
 
-**Crash scenarios:**
+**Crash scenarios (recovery is the broker's job — no sweeper):**
 
-- Before COMMIT → tx rollback. Inbound redelivers; new worker tries CAS; succeeds (state still `Prev`) and retries from scratch.
-- After COMMIT, before ack → inbound redelivers; new worker's CAS sees `status='Next'` → ack+exit. Outbox row already exists → OutboxRelay publishes it.
-- Worker hung mid-step (no rollback, no crash) → row stuck in `Next` state with stale `last_heartbeat_at` → sweeper resets it after 30s + sweeper-poll-delay.
+- **Crash before COMMIT** → DB unchanged; any file work was idempotent (deterministic names). The message was never acked, so RabbitMQ requeues it the moment the channel/connection closes; a new worker reprocesses from scratch. The done-state was never reached, so there is no stuck row to reset.
+- **Crash after COMMIT, before ack** → message redelivers; the new worker hits the short-circuit / a failing CAS (`status='Done'`) and acks. The outbox row already exists → OutboxRelay publishes it (~500ms).
+- **Worker hung/alive (deadlock, connection still up)** → the message stays unacked but the broker sees a healthy connection, so it waits for `consumer_timeout`, then closes the channel and requeues. Recovery latency = `consumer_timeout` (tunable; see calibration).
 
-**Sweeper (per phase, runs every 60s, one replica with `SWEEPER_ENABLED=true`):**
+**Failure-mode → recovery latency (RabbitMQ at-least-once; consumers are idempotent by the CAS above):**
 
-```sql
-UPDATE entity
-   SET status='Prev',                       -- reset to upstream state
-       worker_id=NULL,
-       last_heartbeat_at=NULL
- WHERE status='Next'                        -- the "in-progress" state for this phase
-   AND last_heartbeat_at < now() - interval '30 seconds'
- RETURNING id;
--- for each returned id: insert outbox row to republish from the previous step's queue
-```
+| Failure mode | How RabbitMQ detects it | Recovery latency |
+|--------------|-------------------------|------------------|
+| Process crash / OOM-kill / pod evict / SIGTERM redeploy | OS closes the TCP socket → channel/connection close → unacked deliveries requeued | **seconds** |
+| Hard kill / network partition (no clean close) | AMQP **connection heartbeat** (default 60s, dead after 2 missed) closes the connection → requeue | **~60s** |
+| App deadlock / infinite loop (connection still alive) | **`consumer_timeout`** — broker closes the channel if a delivery is unacked past the timeout, requeuing all of that channel's deliveries | **up to `consumer_timeout`** (default 30 min) |
 
-Diagram 2 of [`cas-heartbeat-recovery.drawio`](cas-heartbeat-recovery.drawio) walks the full sequence. Worst-case recovery latency ≈ `sweeper_threshold_s + sweeper_interval_s` = 30 + 60 = 90s.
+> Note: the "connection heartbeat" above is RabbitMQ's transport-level keepalive, **not** the removed per-row DB heartbeat. They are unrelated.
 
-**Why both heartbeat-sweeper AND outbox:**
-- Heartbeat-sweeper covers "crash before COMMIT" / "worker hung mid-step" → row reset, message republished. Recovery ~90s.
-- Outbox covers "COMMIT succeeded, crash before downstream publish" → relay republishes from durable outbox row. Recovery ~500ms.
+**Why this is reliable without a sweeper:** the only case the old per-phase sweeper uniquely accelerated was the deadlock row (last table row) — and even then it only reduced latency, never correctness. Crash and network-death (the common cases) recover *faster* here than under the old design, because there is no `-ing` row to block the redelivery from reprocessing. The deadlock case is bounded by `consumer_timeout` and backstopped by the job-level `TimeoutSweeper` (§5.7, Network B) and, on Network A, by per-file DLQ-terminal + the `files_manifest_written_count` counter (a job always reaches `AllManifestsWritten` once every file is `Split`/`Failed`/`NotSupported`).
+
+**Queue type & the client-side watchdog:**
+
+> **Queue type: quorum (decided).** RabbitMQ 3.13, quorum queues, 3-node cluster per network. Quorum gives the three broker-native backstops this design relies on — `consumer_timeout`, `delivery-limit`, and at-least-once dead-lettering — and replicates every queue across the 3 nodes (durable by default, survives one node loss). Per-queue Raft cost is negligible at this scale (~4 jobs/sec, small fixed queue set). Mirrored classic queues are deprecated in 3.13 (removed entirely in 4.0) and are not used here; a single-node broker is a SPOF and is called out in [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §20.
+>
+> **Client-side watchdog (still deployed — it reclaims faster than `consumer_timeout`).** `consumer_timeout` is broker-side enforcement of "this delivery has been unacked too long," evaluated at 1-minute intervals with a 30-min default — coarse. A worker-local cancellation timer reclaims a hung-but-alive worker far sooner, with no DB state:
+>
+> ```csharp
+> using var cts = new CancellationTokenSource(maxStepDuration);  // ≈3–4× p99 for this phase
+> await ProcessMessageAsync(delivery, cts.Token);   // hung step self-cancels → throw → nack → channel close → requeue
+> ```
+>
+> This recovers a hung worker in **~`maxStepDuration` (seconds–single minutes)** instead of waiting the full `consumer_timeout`. The watchdog timeout throws like any transient failure, so it feeds the app-level `max_retries=5` counter (nack → retry queue → `x-death`); the quorum `delivery-limit` (set explicitly — see calibration #3) is the broker-side poison backstop behind it. `maxStepDuration` MUST exceed the longest legitimate step for that phase, same bound as `consumer_timeout` — too low kills healthy slow work and false-dead-letters it.
+
+**Calibration (set these from metrics; defaults are conservative):**
+
+1. **`consumer_timeout`** (RabbitMQ, node-level; enforced on quorum queues — default **30 min**). The broker-native deadlock backstop; the **client-side watchdog (above) reclaims faster**, so `consumer_timeout` is the backstop, not the primary defense — set it generously. Tune to ≈ **3–4× the measured max single-message processing time** of the slowest phase, with a **minimum of 5 minutes** (the broker evaluates timeouts at 1-minute intervals; values below 5 minutes are discouraged by the RabbitMQ docs). It MUST exceed the longest legitimate step — otherwise healthy work is killed mid-flight, requeued, and (via the `delivery-limit`) eventually false-dead-lettered. Start at the 30-min default and tune down once you have data.
+2. **`prefetch = 1`** (`basic.qos`) per worker channel. On a `consumer_timeout` the broker closes the channel and requeues **all** in-flight deliveries on it; `prefetch=1` caps the blast radius to a single message.
+3. **`delivery-limit`** — **RabbitMQ 3.13 has no default** (the default of 20 only arrives in 4.0), so it **must be set explicitly via policy**; we set **20**. It is the poison-message backstop: a `consumer_timeout` channel-close counts as a genuine failure toward the limit, so a perpetually-stuck message is eventually dropped/dead-lettered rather than looping forever. The app-level `max_retries=5` counter (`x-death`, fed by watchdog-timeout nacks) is the parallel app-side poison backstop — set both; do not rely on the broker default that does not exist on 3.13.
+4. **Measure first.** RED metrics already capture per-step duration (§6.3). After ~1 week of real traffic, read p99/max per phase and set `consumer_timeout` accordingly. Surface the two driving numbers to the client — max single-file step time and acceptable deadlock-recovery latency — in [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §19.
+5. **Escape hatch (only if metrics demand it):** if one phase is BOTH long *and* needs reclaim faster than its `consumer_timeout`, re-introduce a per-row heartbeat + a single-replica sweeper for **that phase only** (this is what `phase_config` is reserved for). Do not bring the layer back globally.
+6. **At-least-once dead-lettering (mandatory):** by default RabbitMQ dead-letters messages *without* publisher confirms (`dead-letter-strategy = at-most-once`) — a full or unavailable DLX target silently drops the message with no error. Apply **`dead-letter-strategy = at-least-once`** as a **policy on all quorum queues** (main + retry). In RabbitMQ 3.13 this strategy requires the queue also use **`overflow = reject-publish`** (it does **not** work with the default `drop-head`) plus a configured dead-letter-exchange — both already set by this topology (§3.5). The broker then uses publisher confirms internally when routing to the dead-letter target, closing the silent-loss gap. Without this, a transient failure whose `*.retry` queue is full permanently loses the message — the file never reaches `Failed`, the counter never increments, and Network B hangs until `TimeoutSweeper` fires 30 minutes later (Network A: until the §3.7 `TimeoutSweeper` fires).
 
 **Publisher confirms are non-negotiable inside the OutboxRelay.** Without sync confirms, `published_at=now()` could be set on a message Rabbit dropped.
 
 ### 3.4 Decomposition flow (precise)
 
 1. **Ingest** → insert `job(status=Created)` + `outbox(queue='jobs.created', payload={job_id})`. COMMIT, return jobId.
-2. **Prepare** consumes `jobs.created`. CAS `job.status Created→Preparing` (sets worker_id, last_heartbeat_at). Extracts archives into work dir. For every leaf file: insert `source_file(status='Pending')`. Sets `total_source_files`. Final CAS `job.status Preparing→Prepared`. Inserts one `outbox(queue='files.convert')` per file. **After COMMIT**, writes `{job_id}.job.json` to the **manifest outbox dir** via safe-write protocol. This job-header file lets NB create a `job` row and begin accepting file-manifests before any Split.Worker finishes.
-3. **Convert** consumes each `files.convert`. CAS `source_file.status Pending→Converting`. Looks up `proxy_rule`. Runs converter (1→1); sets `applied_conversion` + `converted_relative_path` on the `source_file`. Final CAS `source_file.status Converting→Converted`. Inserts one `outbox(queue='files.split')`.
+2. **Prepare** consumes `jobs.created`. Extracts archives into work dir. For every leaf file: insert `source_file(status='Pending')` (`ON CONFLICT DO NOTHING`). Sets `total_source_files`. Done-CAS `job.status Created→Prepared` (the CAS-winning tx is the one that inserts the `outbox(queue='files.convert')` rows, one per file). **After COMMIT**, writes `{job_id}.job.json` to the **manifest outbox dir** via safe-write protocol. This job-header file lets NB create a `job` row and begin accepting file-manifests before any Split.Worker finishes.
+3. **Convert** consumes each `files.convert`. Resolves the `conversion_rule` for `(job.calling_system_id, source_file.original_format)` with default fallback (§6.1). Runs converter (1→1) for the rule's `required_conversion`; sets `applied_conversion` + `converted_relative_path` on the `source_file`, and snapshots `reverse_conversion` + `file_size_limit_mb` from the rule onto the `source_file` (frozen at Convert; Split reads them, and `reverse_conversion` is carried to NB in the mini-manifest). Done-CAS `source_file.status Pending→Converted`. Inserts one `outbox(queue='files.split')`.
 
-   > **Determinism requirement:** the converter must be deterministic.
+   > **Determinism requirement:** the converter must be deterministic. This matters more in the done-states model: a `consumer_timeout` requeue can run a second worker on the same file concurrently with a slow-but-healthy first worker. A byte-identical re-split is what makes first-writer-wins chunk dedup (`inbox.file_path` PK + `ON CONFLICT DO NOTHING` on Network B) safe — a redelivery re-produces the same chunk bytes under the same names. Determinism is owned by the implementer of the splitting/transform logic: the PDF→DOCX (Aspose) non-determinism is being fixed by making the converter deterministic, with persisting-and-re-serving the first split output kept as a documented contingency if that proves infeasible (see [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §12).
 
-4. **Split** consumes each `files.split`. CAS `source_file.status Converted→Splitting`. Splits the converted file into chunks named `{job_id}_{source_file_id}_chunk_{index}{ext}` (unique because the converter is 1→1 — one converted file per source file, so `index` never collides). Writes bytes to **data outbox dir** via the safe-write protocol in §4.2. Inserts `chunk` rows (`source_file_id`). The terminal `Splitting→Split` flip is NOT done here — it happens in step 5 after the mini-manifest is written, so the flip and the `manifest_written` gate commit together.
+4. **Split** consumes each `files.split`. Splits the converted file into chunks of at most `source_file.file_size_limit_mb` (snapshotted from the per-`callingSystemId` `conversion_rule` at Convert; default fallback per §6.1), named `{job_id}_{source_file_id}_chunk_{index}{ext}` (unique because the converter is 1→1 — one converted file per source file, so `index` never collides). Writes bytes to **data outbox dir** via the safe-write protocol in §4.2. Inserts `chunk` rows (`source_file_id`, `ON CONFLICT DO NOTHING`). The done-CAS `Converted→Split` flip is NOT done here — it happens in step 5 after the mini-manifest is written, so the flip and the counter increment commit together.
 
 5. **Split, same handler** — per-source-file completion + per-file mini-manifest:
 
-   With the `source_file` still in `Splitting`, the worker writes the mini-manifest first, then commits the terminal `Split` flip:
+   The worker writes the mini-manifest first, then commits the done-CAS `Split` flip:
 
-   a. **Write mini-manifest first (crash-safety sequencing):** build `{job_id}_{source_file_id}.file.json` (deterministic JSON — see §3.6) and write it to the **manifest outbox dir** via safe-write protocol. This happens BEFORE the DB commit that sets terminal status. Rationale: if the worker crashes after writing the file but before committing, the sweeper resets `source_file.status` to `Pending`; the retried worker re-splits (idempotent chunk names), re-writes the identical mini-manifest, and then commits — resulting in the same final state. The file write is therefore safe to redo.
+   a. **Write mini-manifest first (crash-safety sequencing):** build `{job_id}_{source_file_id}.file.json` (deterministic JSON — see §3.6) and write it to the **manifest outbox dir** via safe-write protocol. This happens BEFORE the DB commit that sets terminal status. Rationale: the file write is not transactional, and NB depends on it. If the worker crashes after writing the file but before committing, the message redelivers, the retried worker re-splits (idempotent chunk names), re-writes the identical mini-manifest, and then commits — same final state. Committing `Split` *before* writing the file would be unsafe: a crash in between would short-circuit the redelivery (`status='Split'`) and the file would never be written, hanging NB until timeout.
 
-   b. **Gate counter increment with `manifest_written` flag:**
+   b. **Done-CAS gates the counter increment (no `manifest_written` flag):**
 
    ```sql
-   -- Only increment if this is the first time manifest was written for this file.
+   -- The status guard alone makes this exactly-once: only the first Converted→Split wins.
    UPDATE source_file
-      SET status = 'Split',
-          manifest_written = TRUE
+      SET status = 'Split'
     WHERE id = $source_file_id
-      AND manifest_written = FALSE
+      AND status = 'Converted'
     RETURNING id;
-   -- (only executes the job counter update if RETURNING produced a row)
+   -- (only run the job counter update if RETURNING produced a row)
 
    UPDATE job
       SET files_manifest_written_count = files_manifest_written_count + 1,
@@ -263,11 +211,11 @@ Diagram 2 of [`cas-heartbeat-recovery.drawio`](cas-heartbeat-recovery.drawio) wa
 
    COMMIT tx.
 
-   The `manifest_written = FALSE` guard ensures that if the worker retries after the file was written but before the original DB commit, the counter is incremented exactly once per source file. **The heartbeat sweeper resets `status`, `worker_id`, and `last_heartbeat_at` but NEVER resets `manifest_written`.**
+   The `WHERE status='Converted'` guard ensures exactly-once counting: a redelivery or a concurrent duplicate worker (e.g. after a `consumer_timeout` requeue) re-runs the idempotent split and re-writes the identical mini-manifest, but only the first `Converted→Split` transition succeeds, so the counter increments exactly once. No separate `manifest_written` flag is needed.
 
    When `files_manifest_written_count` reaches `total_source_files`, `job.status` flips to `AllManifestsWritten`. No ManifestSweeper is required.
 
-   > **Permanent failure path:** on a permanent failure for a source file (either in this handler or via the DLQ consumer), the same write-before-commit sequencing applies: write the mini-manifest (with `status='Failed'`, `chunks=[]`) to the manifest outbox dir BEFORE committing `source_file.status='Failed'` to the DB. The `manifest_written` gate still guards the counter increment.
+   > **Permanent failure path:** on a permanent failure for a source file (either in this handler or via the DLQ consumer), the same write-before-commit sequencing applies: write the mini-manifest (with `status='Failed'`, `chunks=[]`) to the manifest outbox dir BEFORE committing `source_file.status='Failed'`. The terminal-status CAS (`WHERE status NOT IN ('Split','Failed','NotSupported')`) gates the counter increment exactly-once, the same way the `Converted→Split` CAS does on the success path.
 
 ### 3.5 Retry policy (NetworkA) — aligned with `worker-exception-handling.drawio`
 
@@ -279,16 +227,16 @@ On worker exception, the worker classifies the exception against a fixed whiteli
 | **Permanent** | `UnsupportedFormatException`, `FileCorruptException`, `ConversionException`, `ValidationException`, deterministic application exceptions | `UPDATE source_file SET status='Failed', failure_reason=<message>` (A-side analog of B-side `expected_file`); `nack(requeue=false)` → `*.dead` |
 | **Unknown** | Anything not in either list | Treat as **transient** by default. Retries cover spurious errors; if the loop persists, DLQ catches it after `max_retries`. |
 
-- **`max_retries` default = 5.** After `x-retry-count >= 5`, the transient message lands in `*.dead`. **Both** kinds of dead-lettered message reach the same `*.dead` DLQ consumer: (a) transient-exhausted messages, and (b) permanent-failure messages `nack`ed straight to `*.dead` (table row above). The consumer is idempotent on `source_file.manifest_written`: if `manifest_written=FALSE` it writes the per-file mini-manifest (with `status='Failed'`, `chunks=[]`) to the manifest outbox dir **before** committing the terminal status, then flips `source_file.status='Failed'` and sets `manifest_written=TRUE`; if `manifest_written=TRUE` (permanent path already wrote it inline per §3.4 step 5) the manifest write is skipped and only the status flip is committed. Both paths therefore follow the same write-before-commit sequencing, so Network B always learns the file failed and never waits on it forever.
+- **`max_retries` default = 5.** After `x-retry-count >= 5`, the transient message lands in `*.dead`. **Both** kinds of dead-lettered message reach the same `*.dead` DLQ consumer: (a) transient-exhausted messages, and (b) permanent-failure messages `nack`ed straight to `*.dead` (table row above). The consumer is idempotent on `source_file.status`: if the file is not yet terminal it writes the per-file mini-manifest (with `status='Failed'`, `chunks=[]`) to the manifest outbox dir **before** committing, then done-CAS `source_file.status='Failed'` (`WHERE status NOT IN ('Split','Failed','NotSupported')`), which also gates the counter increment; if the file is already terminal (the inline permanent path of §3.4 step 5 already wrote the manifest) the CAS no-ops and the write is skipped. Both paths follow the same write-before-commit sequencing, so Network B always learns the file failed and never waits on it forever.
 - **Job-level `Failed` is set ONLY by:** (i) Split's per-file counter reaching `total_source_files` when all source files are `Failed`/`NotSupported`, or (ii) external operator intervention. Workers never set `job.status='Failed'` directly mid-pipeline.
-- **Backpressure:** every internal main queue declared with `x-max-length` + `x-overflow=reject-publish` (NOT `-dlx`). When OutboxRelay's publish gets `basic.nack`, it leaves the outbox row unpublished and retries next poll. Stall propagates upstream as outbox tables grow (visible in metrics) and ultimately as `basic.publish` nacks at Ingestion.Api (HTTP 429). `reject-publish-dlx` is used only on terminal-edge queues.
+- **Backpressure:** every queue — main, retry, **and dead** — declared with `x-max-length` + `x-overflow=reject-publish`. When OutboxRelay's publish gets `basic.nack`, it leaves the outbox row unpublished and retries next poll. Stall propagates upstream as outbox tables grow (visible in metrics) and ultimately as `basic.publish` nacks at Ingestion.Api (HTTP 429). **`reject-publish-dlx` is never used** — on `*.dead` queues it would dead-letter the overflow message to an undefined further exchange and silently drop it. Instead, set `x-max-length` large on `*.dead` queues (e.g. 100 000) and alert on depth before the limit is reached.
 - Tunable values (`x-max-length`, `x-message-ttl`) set via **policies**, not declaration args.
 
 ### 3.6 Per-file manifest schema
 
 There are two distinct file types written to the manifest outbox dir:
 
-**Job header** — `{job_id}.job.json` — written by Prepare.Worker after `Preparing→Prepared`:
+**Job header** — `{job_id}.job.json` — written by Prepare.Worker after `Created→Prepared`:
 
 ```jsonc
 {
@@ -316,7 +264,8 @@ NB's Assembly.Worker consuming `job-headers.received` uses this to INSERT the `j
   "sourceFileId": "...",
   "originalRelativePath": "...",
   "originalFormat": "...",
-  "appliedConversion": "...",          // null if no conversion
+  "appliedConversion": "...",          // forward conversion applied on A; null if pass-through
+  "reverseConversion": "...",          // reverse target type for NB; null = NB skips reverse conversion (pass-through)
   "status": "Split",                   // Split | Failed | NotSupported
   "failureReason": null,               // populated for Failed / NotSupported
   "chunks": [
@@ -327,7 +276,59 @@ NB's Assembly.Worker consuming `job-headers.received` uses this to INSERT the `j
 
 For failed files: `status` is `"Failed"` or `"NotSupported"`, `failureReason` is set, and `chunks` is `[]`.
 
-NB's Assembly.Worker consuming `file-manifests.received` uses each mini-manifest to upsert one `expected_file` + its `expected_chunk` rows. If `status` is `Failed` or `NotSupported`, it creates `expected_file` in a terminal state with no `expected_chunk` rows — NB never waits for chunks that will never arrive. Reporter's terminal-count logic then sees those files as already terminal.
+`reverseConversion` is the **only** A→B carrier of the per-`callingSystemId` reverse-conversion instruction (§6.1): A resolves it from the `conversion_rule`, B obeys it verbatim and keeps no conversion config of its own. It is independent of `appliedConversion` — it can name a different target type, equal the original format, or be `null` to mean "no reverse conversion" (see §5.5).
+
+NB's Assembly.Worker consuming `file-manifests.received` uses each mini-manifest to upsert one `expected_file` + its `expected_chunk` rows, persisting `appliedConversion` and `reverseConversion` onto the `expected_file` (ReverseConverter reads them later). If `status` is `Failed` or `NotSupported`, it creates `expected_file` in a terminal state with no `expected_chunk` rows — NB never waits for chunks that will never arrive. Reporter's terminal-count logic then sees those files as already terminal.
+
+### 3.7 Network A `TimeoutSweeper` (job-level backstop)
+
+> Added alongside the client-side watchdog (§3.3) as defense-in-depth — it is the job-level SLA backstop for the residual failure modes that the watchdog + quorum backstops do not fully cover. Visual: [`cas-heartbeat-recovery.drawio`](cas-heartbeat-recovery.drawio) **page 4** (watchdog reclaim ① + sweeper backstop ②).
+
+Network A's job completion gate is `files_manifest_written_count` reaching `total_source_files` (→ `AllManifestsWritten`). That gate is only reached once **every** `source_file` is terminal (`Split`/`Failed`/`NotSupported`). The watchdog + DLQ-terminal path normally guarantee that. But two residual failure modes can strand a single `source_file` short of terminal forever, hanging the whole job:
+
+- a watchdog-evading hang (e.g. the watchdog thread itself wedged), and
+- a message wedged because its dead-letter target is persistently full/unavailable — at-least-once DLX (§3.3 #6) keeps it from being *lost*, but it stays unprocessed, so the file never reaches `Failed` and the counter never increments.
+
+`TimeoutSweeper-A` is the job-level SLA backstop for both. It mirrors Network B's §5.7 sweeper — **job-grain, not per-row; no `-ing` states, no per-row heartbeat, no schema change** (uses existing `job.created_at`/`updated_at` and `source_file.status`). Runs every 60s on a single sweeper-enabled replica (`SWEEPER_ENABLED=true`); per-row CAS gates make accidental concurrent runs safe.
+
+```sql
+-- (i) find jobs past their per-callingSystemId SLA that never reached a terminal job state.
+--     SLA minutes resolved from calling_system_config with default fallback (§6.1).
+WITH t AS (
+  SELECT j.id FROM job j
+   LEFT JOIN calling_system_config csc ON csc.calling_system_id = j.calling_system_id
+   LEFT JOIN calling_system_config def ON def.calling_system_id = 'default'
+   WHERE j.status NOT IN ('AllManifestsWritten','Failed')
+     AND now() - j.created_at
+           > make_interval(mins => COALESCE(csc.sla_minutes, def.sla_minutes, 30))  -- A-side SLA; align with §5.7
+   LIMIT 10 FOR UPDATE SKIP LOCKED
+)
+SELECT id FROM t;
+
+-- (ii) for each stranded source_file of such a job, force it terminal so the
+--      counter can complete. Write-before-commit sequencing as in §3.4 step 5:
+--      write the mini-manifest ({status:'Failed', failureReason:'SweeperTimeout', chunks:[]})
+--      to the manifest outbox dir BEFORE this commit, so NB always learns the file failed.
+UPDATE source_file
+   SET status = 'Failed',
+       failure_reason = 'SweeperTimeout'
+ WHERE job_id = $job_id
+   AND status NOT IN ('Split','Failed','NotSupported')
+ RETURNING id;                       -- $k = files forced this run
+
+-- (iii) advance the counter by $k in the SAME tx; flips to AllManifestsWritten when it reaches total
+UPDATE job
+   SET files_manifest_written_count = files_manifest_written_count + $k,
+       status = CASE WHEN files_manifest_written_count + $k = total_source_files
+                     THEN 'AllManifestsWritten' ELSE status END,
+       updated_at = now()
+ WHERE id = $job_id;
+COMMIT;
+```
+
+The terminal-status CAS (`WHERE status NOT IN (...)`) is the exactly-once gate, identical to the normal Split path — if a slow-but-healthy worker finishes a file concurrently, only one of {worker, sweeper} flips it and increments. After the sweep, the job reaches `AllManifestsWritten`, NB receives a `Failed` mini-manifest for each stranded file, and the job converges instead of hanging indefinitely.
+
+**SLA = per-`callingSystemId`, default 30 minutes** (resolved from `calling_system_config` with `default` fallback, §6.1), measured from `job.created_at`. Keep the A-side and B-side SLA for a given `callingSystemId` aligned (§5.7) — they live in independent per-network `calling_system_config` tables, so the operator sets both — so a job times out coherently across both sides.
 
 ---
 
@@ -338,22 +339,27 @@ The Proxy is **third-party and unchanged**. It:
 1. Watches the data outbox dir and manifest outbox dir on the A side.
 2. Ships each file unmodified to corresponding dirs on the B side (referred to throughout this document as the **proxy delivery dir**).
 3. On failure, drops a sentinel: `<original-name>.ERROR.txt` or `<original-name>.UNSUPPORTED.txt`.
-4. Publishes a Rabbit message per transferred file:
+4. Publishes a Rabbit message per transferred file, **only after the file has finished moving into the proxy delivery dir**:
 
    ```json
    { "filePath": "<absolute-path-on-B-side>" }
    ```
 
-**This contract is frozen.** The proxy does NOT delete files from the proxy delivery dir on Network B — Network B owns those files from the moment they land there. Cleanup is Network B's responsibility (see §6.6).
+   NetworkB acts on this message, never on a filesystem-watch event, so it never observes a mid-write file — this message-after-move ordering is the truncation guard (see §5.9).
 
-### 4.1 Open question — partial-file pickup
+**This contract is frozen.** The proxy does NOT delete files from the proxy delivery dir on Network B as part of the normal flow — Network B owns those files from the moment they land there, and cleanup is Network B's responsibility (see §6.6). As a final backstop, the proxy self-cleans days-old leftover files from its delivery dir.
 
-NetworkA must NOT write `.tmp`-named files to the proxy outbox. Recommended: write to a staging subdirectory inside the same filesystem (which the proxy does NOT watch), then a single `mv` to the watched directory using the final filename. See [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §1.
+### 4.1 Partial-file pickup — resolved
+
+The client confirmed the proxy **ignores `.tmp` files**, so the partial-file-pickup risk is closed: NetworkA writes each file to the proxy outbox as `<name>.tmp` then renames it to `<name>` on the same filesystem. The proxy only picks up the renamed final file, never the in-progress `.tmp`. This reverses the earlier "must NOT write `.tmp` to the proxy outbox / staging-subdir + mv" workaround — `.tmp`+rename is now the confirmed chosen mechanism. See [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §1.
 
 ### 4.2 Safe-write protocol
 
-- Local writes (B's working files, target_path, NetworkB CSV) — `.tmp + rename` on the same filesystem.
-- Outbox writes (A → proxy) — staging-subdir + rename to final filename. Configurable per outbox path.
+Every file write uses `.tmp + rename` on the same filesystem — write to `<name>.tmp`, then rename to `<name>` so consumers only ever see the complete file:
+
+- Local working files (A work dir, B's working files, assembled output) — `.tmp + rename`.
+- A → proxy outbox writes (both the data outbox and the manifest outbox dirs) — `.tmp + rename`; the proxy ignores `.tmp` files (§4.1), so it never picks up a partial file. No staging subdirectory and no separate `mv` step.
+- B `target_path` and the NetworkB CSV — `.tmp + rename`; the consuming system scanning `target_path` ignores `.tmp` files (§5.5/§6.5).
 
 ---
 
@@ -364,94 +370,19 @@ NetworkA must NOT write `.tmp`-named files to the proxy outbox. Recommended: wri
 | # | Service | Responsibility |
 |---|---------|----------------|
 | 1 | **ProxyListener** | Consumes proxy Rabbit. Two-stat synchronous stability check (§5.9). For each event, inserts `inbox` row + (conditionally) `outbox` row in a single transaction. Seven branches classified by filename pattern — see §5.3 and [`chunk-flow.drawio`](chunk-flow.drawio). Handles: job headers (`{job_id}.job.json`), per-file mini-manifests (`{job_id}_{source_file_id}.file.json`), chunks, and ERROR/UNSUPPORTED sentinels. **No file copy at any point** — chunks stay in the proxy delivery dir until Assembly reads them during concat. |
-| 2 | **Assembly.Worker** | Consumes `job-headers.received`, `file-manifests.received`, `file-manifest-errors.received`, and `chunks.received`. **Job-header path:** INSERT `job` row (`status='Awaiting'`, `expected_file_count`), drain buffered file-manifest and chunk inbox rows inline. **File-manifest path:** upsert one `expected_file` (terminal-Failed for failed files; Pending otherwise) + its `expected_chunk` rows, drain buffered chunks for this file inline, run concat if complete. **File-manifest-error path:** create terminal `expected_file` with `status='Failed'`, emit `outbox(files.finalized)`. **Chunk path:** CAS `expected_chunk.received_at`, increment `expected_file.received_chunk_count`; if status flips to `Assembled`, run concat before COMMIT, then `outbox(files.assembled)`. |
-| 3 | **ReverseConverter.Worker** | Consumes `files.assembled`. Reads the assembled file from `work/{job_id}/assembled/{file_id}.bin`, applies reverse `IFileConverter` (or pass-through), writes the result under `target_path` via `.tmp + rename`. CAS `expected_file.status Assembled→ReverseConverting→Finalized`. Writes `outbox(files.finalized)`. Pure transform — never touches the proxy delivery dir or per-chunk bytes. |
-| 4 | **Reporter.Worker** | Consumes `files.finalized`, `chunks.error`, `chunks.unsupported`. CAS `expected_file.status` to terminal; increments `job.finalized_file_count`; on completion flips `job.status='ReportPending'`, writes `{job_id}_report.csv`, dispatches `StatusCallbackPayload` via `IAnswerDispatcher`, final CAS to `Done`. Hosts `ReportPendingSweeper`, `TimeoutSweeper`, and per-phase heartbeat sweepers on a single sweeper-enabled replica. Also owns proxy-delivery-dir cleanup on terminal job (see §6.6). |
+| 2 | **Assembly.Worker** | Consumes `job-headers.received`, `file-manifests.received`, `file-manifest-errors.received`, and `chunks.received`. **Job-header path:** INSERT `job` row (`status='Awaiting'`, `expected_file_count`), drain buffered file-manifest and chunk inbox rows inline. **File-manifest path:** upsert one `expected_file` (terminal-Failed for failed files; Pending otherwise), persisting `applied_conversion` + `reverse_conversion` from the mini-manifest, + its `expected_chunk` rows, drain buffered chunks for this file inline, run concat if complete. **File-manifest-error path:** create terminal `expected_file` with `status='Failed'`, emit `outbox(files.finalized)`. **Chunk path:** CAS `expected_chunk.received_at`, increment `expected_file.received_chunk_count`; if status flips to `Assembled`, run concat before COMMIT, then `outbox(files.assembled)`. Immediately after that COMMIT, best-effort deletes the consumed chunk files for this assembled file from the proxy delivery dir (failures ignored). |
+| 3 | **ReverseConverter.Worker** | Consumes `files.assembled`. Reads the assembled file from `work/{job_id}/assembled/{file_id}.bin`. Reads `expected_file.reverse_conversion` (carried A→B in the mini-manifest, §6.1): if `NULL` → pass-through (no conversion); else applies `IFileConverter` from the assembled file's current format (`applied_conversion` if forward-converted, else `original_format`) **to** the `reverse_conversion` target type. Writes the result under `target_path` via `.tmp + rename`. Done-CAS `expected_file.status Assembled→Finalized` (no intermediate `ReverseConverting`). Writes `outbox(files.finalized)`. Pure transform — never touches the proxy delivery dir or per-chunk bytes. |
+| 4 | **Reporter.Worker** | Consumes `files.finalized`, `chunks.error`, `chunks.unsupported`. CAS `expected_file.status` to terminal; increments `job.finalized_file_count`; on completion flips `job.status='ReportPending'`, writes `{job_id}_report.csv`, dispatches `StatusCallbackPayload` via `IAnswerDispatcher`, final CAS to `Done`. Hosts `ReportPendingSweeper`, `TimeoutSweeper`, and per-phase heartbeat sweepers on a single sweeper-enabled replica. On terminal job, best-effort sweeps any files still remaining in the proxy delivery dir for the job (job-header, per-file manifests, sentinels, and chunks of Failed/partial files Assembly never consumed) — Assembly has already deleted the bulk of chunks post-COMMIT, and the proxy self-cleans any leftovers (see §6.6). |
 | 5 | **OutboxRelay-B** | Polls `outbox WHERE published_at IS NULL` every ~500ms, publishes to RabbitMQ with publisher-confirm, marks `published_at=now()`. 2–3 replicas competing via `FOR UPDATE SKIP LOCKED`. |
 
-### 5.2 Postgres-B Schema (minimal)
+### 5.2 Postgres-B Schema
 
-```
-inbox (
-  file_path TEXT PRIMARY KEY,        -- proxy file paths are unique
-  received_at TIMESTAMPTZ DEFAULT now(),
-  kind TEXT,                         -- JobHeader | FileManifest | Chunk | JobHeaderError | FileManifestError | Error | Unsupported
-  job_id UUID NULL,                  -- parsed from filename; NULL only if filename is unparseable
-  source_file_id UUID NULL,          -- set for FileManifest / FileManifestError rows; NULL for JobHeader / Chunk
-  published BOOLEAN DEFAULT FALSE    -- TRUE once a downstream queue message has been emitted (or the inline drain has consumed this row)
-);
-CREATE INDEX inbox_unpublished_by_job ON inbox(job_id) WHERE published = FALSE;
+Full DDL is canonical in [`DB-SCHEMA.md` → Network B](DB-SCHEMA.md#network-b--postgres-b). Tables: `inbox`, `job`, `expected_file`, `expected_chunk`, `outbox`, `phase_config`, `config`, `calling_system_config`. (`calling_system_config` holds B's per-`callingSystemId` SLA/timeout with default fallback — §6.1; B keeps **no** conversion config, the reverse-conversion instruction arrives via the mini-manifest.) State vocabularies and the buffer flag the flow logic below relies on:
 
-job (
-  id UUID PRIMARY KEY,
-  source_path TEXT,
-  target_path TEXT,
-  target_network TEXT,
-  calling_system_id TEXT,
-  calling_system_name TEXT,
-  external_id TEXT,
-  answer_type TEXT,
-  answer_location TEXT,
-  package_type TEXT,
-  original_package_name TEXT,
-  job_header_received_at TIMESTAMPTZ NULL,   -- set when job-header processed; replaces manifest_received_at
-  expected_file_count INT NULL,
-  finalized_file_count INT DEFAULT 0,
-  status TEXT,                       -- Awaiting | Assembling | ReportPending | Done | PartiallyDone | Failed | TimedOut
-  callback_sent_at TIMESTAMPTZ NULL,
-  worker_id TEXT NULL,
-  last_heartbeat_at TIMESTAMPTZ NULL,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ NULL,        -- bumped on every status transition (§5.6 Reporter, §5.7 TimeoutSweeper)
-  cleaned_at TIMESTAMPTZ NULL         -- set by Reporter after terminal-job artifact deletion (§6.6); NULL = not yet cleaned
-);
-CREATE INDEX job_active ON job(status) WHERE status IN ('Awaiting','Assembling','ReportPending');
-CREATE INDEX job_cleanup ON job(updated_at) WHERE cleaned_at IS NULL;
-
-expected_file (
-  id UUID PRIMARY KEY,
-  job_id UUID FK,
-  original_relative_path TEXT,
-  original_format TEXT,
-  applied_conversion TEXT NULL,
-  expected_chunk_count INT,
-  received_chunk_count INT DEFAULT 0,
-  bytes_total BIGINT,
-  status TEXT,                       -- Pending | Assembled | ReverseConverting | Finalized | Failed | NotSupported
-  failure_reason TEXT NULL,          -- carried from manifest for files marked Failed/NotSupported by A
-  worker_id TEXT NULL,
-  last_heartbeat_at TIMESTAMPTZ NULL,
-  UNIQUE (job_id, original_relative_path)
-);
-
-expected_chunk (
-  id UUID PRIMARY KEY,
-  expected_file_id UUID,
-  job_id UUID,
-  index INT,
-  name TEXT,                         -- proxy filename; used to resolve against proxy_delivery_dir at concat time
-  byte_length BIGINT,
-  received_at TIMESTAMPTZ NULL,
-  UNIQUE (expected_file_id, index)
-);
-CREATE INDEX expected_chunk_pending ON expected_chunk(expected_file_id) WHERE received_at IS NULL;
-
-outbox (
-  id BIGSERIAL PK,
-  queue TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  published_at TIMESTAMPTZ NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-CREATE INDEX outbox_pending ON outbox(created_at) WHERE published_at IS NULL;
-
-phase_config (
-  phase TEXT PRIMARY KEY,
-  heartbeat_interval_s INT NOT NULL DEFAULT 10,
-  sweeper_threshold_s INT NOT NULL DEFAULT 30,
-  max_retries INT NOT NULL DEFAULT 5
-);
-```
+- `inbox.published` — `FALSE` = buffered (chunk before its file-manifest, or file-manifest before its job header); `TRUE` once a downstream queue message is emitted or an inline drain consumes the row. `inbox.file_path` PK dedups proxy redeliveries.
+- `job.status` — `Awaiting | Assembling | ReportPending | Done | PartiallyDone | Failed | TimedOut` (`Assembling`/`ReportPending` are counter/sweeper-driven lifecycle states, not per-worker claims).
+- `expected_file.status` — `Pending | Assembled | Finalized | Failed | NotSupported` (done-states only).
+- `expected_chunk.name` — proxy filename, resolved against the proxy delivery dir at concat time. **Chunk bytes are never copied.**
 
 Partitioning deferred to year 2.
 
@@ -654,6 +585,7 @@ Assembly.Worker consuming `chunks.received`:
    ```
 
 3. COMMIT, ack.
+4. After COMMIT, best-effort delete the consumed chunk files for this file from the proxy delivery dir (resolve by `expected_chunk.name`); delete failures are ignored. This is post-COMMIT, so a crash before it just leaves the chunks for Reporter/proxy to sweep, and a redelivery finds the file already `Assembled` and no-ops.
 
 ---
 
@@ -731,12 +663,16 @@ No outbox row. Recovery is not possible without job metadata. Because no `job` r
 ### 5.5 Reverse conversion & finalization
 
 ReverseConverter consumes `files.assembled`:
-- CAS `expected_file.status Assembled→ReverseConverting`.
 - Reads `work/{job_id}/assembled/{file_id}.bin`.
-- Applies reverse `IFileConverter` per `applied_conversion` (or pass-through).
-- Writes result to `target_path/<original_relative_path>` via `.tmp + rename`.
-- CAS `expected_file.status ReverseConverting→Finalized`.
-- Inserts `outbox(queue='files.finalized', payload)`.
+- Reads `expected_file.reverse_conversion` — the per-`callingSystemId` reverse-conversion instruction A resolved from its `conversion_rule` and carried verbatim in the mini-manifest (§3.6/§6.1). This **replaces** the old "reverse is the inverse of `applied_conversion`" rule: reverse conversion is now an independent, configurable target. Three cases:
+  - `reverse_conversion IS NULL` → **no reverse conversion** (pass-through): the assembled bytes are written to `target_path` unchanged. (Used for file types the client marks as not needing reverse conversion.)
+  - `reverse_conversion` = the original source format → undo the forward conversion (the common case, e.g. forward `heic→PNG`, reverse `PNG→heic`).
+  - `reverse_conversion` = some other format → convert to a **different** target type than the original.
+  - In the two non-pass-through cases, `IFileConverter` runs from the assembled file's current format (`applied_conversion` if a forward conversion was applied, else `original_format`) **to** `reverse_conversion`.
+- Writes result to `target_path/<original_relative_path>` via `.tmp + rename` (idempotent; deterministic path). `target_path` is a network share (NFS/SMB) for now, written **directly** from this pod (no relay); `.tmp + rename` is safe there and the consuming system scanning the directory ignores `.tmp` files. If two jobs target the same `target_path` and filenames collide, the write overwrites (last-writer-wins) — `.tmp + rename` overwrites naturally.
+- `original_relative_path` is taken verbatim from the mini-manifest; Network A's Prepare already encodes nested-archive containers into it: a supported archive container `name.ext` (zip/rar/7z or any other supported archive type) contributes a directory named by replacing the **last** dot of its filename with an underscore (`name_ext`), so `parent.zip/inner.zip/leaf.docx` lands at `target_path/parent_zip/inner_zip/leaf.docx` and a multi-dot container `my.data.zip` becomes `my.data_zip`. The leaf file keeps its true extension. NetworkB does not recompute this layout — it uses `original_relative_path` as-is.
+- Done-CAS `expected_file.status Assembled→Finalized` (single transition; no intermediate `ReverseConverting`). The `.tmp + rename` write happens before this CAS, so a redelivery re-renders identical bytes and the CAS still flips exactly once.
+- Inserts `outbox(queue='files.finalized', payload)` in the CAS-winning tx.
 
 ReverseConverter does NOT touch the proxy delivery dir or per-chunk bytes — concat is Assembly's job.
 
@@ -788,10 +724,14 @@ When `status='ReportPending'`:
 `TimeoutSweeper` (cron in Reporter, sweeper-enabled replica) runs every 60s:
 
 ```sql
+-- SLA minutes resolved per callingSystemId from calling_system_config, default fallback (§6.1).
 WITH t AS (
-  SELECT id FROM job
-   WHERE status IN ('Awaiting','Assembling')
-     AND now() - coalesce(job_header_received_at, created_at) > interval '30 minutes'
+  SELECT j.id FROM job j
+   LEFT JOIN calling_system_config csc ON csc.calling_system_id = j.calling_system_id
+   LEFT JOIN calling_system_config def ON def.calling_system_id = 'default'
+   WHERE j.status IN ('Awaiting','Assembling')
+     AND now() - coalesce(j.job_header_received_at, j.created_at)
+           > make_interval(mins => COALESCE(csc.sla_minutes, def.sla_minutes, 30))
    LIMIT 10 FOR UPDATE SKIP LOCKED
 )
 UPDATE job SET status='ReportPending', updated_at=now()
@@ -801,7 +741,7 @@ UPDATE job SET status='ReportPending', updated_at=now()
 
 For each timed-out job: flip non-terminal `expected_file` rows to `Failed`, build payload with `JobStatus='Timeout'`, write CSV + dispatch callback, final CAS to `TimedOut`.
 
-**SLA = 30 minutes** from `coalesce(job_header_received_at, created_at)`. Configurable per deployment.
+**SLA = per-`callingSystemId`, default 30 minutes** (resolved from B's `calling_system_config` with `default` fallback, §6.1), measured from `coalesce(job_header_received_at, created_at)`. The A-side SLA (§3.7) lives in a separate per-network table; keep both aligned per `callingSystemId`. `ReportPendingSweeper`'s stuck-`ReportPending` threshold is likewise per-`callingSystemId` (`report_pending_minutes`, default 5).
 
 **Terminal short-circuit:** every B-worker checks `job.status` before doing work. Terminal → ack and exit. Prevents late chunks from producing files in `target_path` after a failure callback has gone out.
 
@@ -822,7 +762,7 @@ See [`worker-exception-handling.drawio`](worker-exception-handling.drawio) for t
 
 ### 5.9 ProxyListener stability check
 
-Two-stat synchronous: `stat` → sleep 200ms → `stat`, compare size + mtime.
+Two-stat synchronous: `stat` → sleep 200ms → `stat`, compare size + mtime. This is now belt-and-suspenders: the proxy publishes its Rabbit message only after the file has finished moving into the proxy delivery dir (§4), and NetworkB acts on that message rather than a filesystem-watch event, so it never observes a mid-write file. The check is retained as a cheap second line of defense.
 
 ---
 
@@ -830,54 +770,74 @@ Two-stat synchronous: `stat` → sleep 200ms → `stat`, compare size + mtime.
 
 ### 6.1 Configuration
 
-- Each network has a `config` table for proxy rules, converter mappings, retry counts, timeout durations, outbox paths.
-- Workers snapshot the rule active at job-creation time into the `job` row.
-- Heartbeat / sweeper threshold / max_retries per phase live in `phase_config` (defaults: 10s / 30s / 5).
+**Everything that varies by caller is keyed by `callingSystemId` with a `default` fallback row.** This covers proxy/processing configuration (folder locations, split file-size limit, required forward conversion, required reverse conversion), SLAs and timeouts. The model is split across two table families:
+
+**(a) `conversion_rule` — Network A only, the per-caller processing rule.** Keyed `(calling_system_id, source_format)`. One row carries the proxy configuration the client described:
+
+```jsonc
+{
+  "SourceFormat":       "heic",   // the file's original_format this rule matches
+  "RequiredConversion": "PNG",    // forward conversion on A → source_file.applied_conversion; null = pass-through
+  "reverseConversion":  "heic",   // reverse target on B; null = no reverse conversion (pass-through); may differ from SourceFormat
+  "FileSizeLimitMb":    200       // Split.Worker max bytes per chunk → source_file.file_size_limit_mb
+}
+```
+
+Resolution precedence (most specific wins): `(callingSystemId, sourceFormat)` → `(callingSystemId, 'default')` → `('default', sourceFormat)` → `('default', 'default')`. Convert.Worker resolves the rule once and **snapshots** `applied_conversion`, `reverse_conversion`, and `file_size_limit_mb` onto the `source_file`, so a mid-job config change cannot make a job's forward/reverse/split parameters inconsistent. `reverse_conversion` then rides A→B in the per-file mini-manifest (§3.6) — **Network B holds no conversion config**, it obeys the carried instruction (§5.5).
+
+**(b) `calling_system_config` — both networks, per-caller folders + SLA.** Keyed by `calling_system_id` (literal `'default'` row = fallback). Network A: outbox folder locations + A-side `sla_minutes` (§3.7). Network B: B-side `sla_minutes` (§5.7) + `report_pending_minutes` (§5.6). **SLA lives in independent per-network tables** (no A→B carry); the operator sets both and keeps them aligned per `callingSystemId` so a job times out coherently across the two sides. *(Per-caller folder locations: if a `callingSystemId` overrides the A outbox dirs, the proxy must watch each such dir — coordinate with the proxy operator; otherwise the `default` row's dirs are used.)*
+
+- `max_retries` per phase lives in `phase_config` (default 5). **Broker-level** timers — RabbitMQ `consumer_timeout`, AMQP connection-heartbeat interval, per-channel `prefetch` — are queue/node-scoped deployment settings (RabbitMQ config / policies / `basic.qos`), **not per-`callingSystemId`** and not DB config — see §3.3 calibration. Only the business-level job SLA is per-caller.
+- The flat key/value `config` table remains for genuinely global, non-per-caller knobs (e.g. `outbox` poll interval, `DRAIN_BATCH`, retention days).
+- **Priority by `callingSystemId` is deferred** — see [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §21: RabbitMQ 3.13 quorum queues have no native message priority (arrives in 4.0), so priority is out of scope pending a 4.x upgrade decision. `calling_system_config` is the reserved home for a future `priority` column.
 
 ### 6.2 Idempotency keys
 
-- Primary: **per-row status CAS** with `worker_id` + `last_heartbeat_at` on every state flip.
+- Primary: **per-row status done-CAS** (`WHERE status='Prev'`) on every state flip — the single serialization point per step.
 - Secondary: UNIQUE constraints on natural business keys.
 - Job-level: `IngestionRequestPayload.ExternalId` is unique-indexed in Postgres-A `job`.
 - Outbox: `outbox.id` is the publish identity; relays are at-least-once (consumers remain idempotent via CAS).
 
 ### 6.3 Observability
 
-- **Structured logs (Serilog)** — `job_id`, `service`, `step`, `worker_id`, `message_id`.
-- **Metrics (Prometheus)** — RED per worker step; queue depths; `outbox` backlog (pending rows + max age) per network; sweeper rescue counts; Postgres pool / autovacuum / replication lag.
+- **Structured logs (Serilog)** — `job_id`, `service`, `step`, `worker_id` (the processing pod, from logs/env — not a DB column), `message_id`.
+- **Metrics (Prometheus)** — RED per worker step (**per-step duration histogram drives `consumer_timeout` calibration, §3.3**); queue depths; **`redelivered`-message rate per queue** (the replacement for the old sweeper-rescue metric — a rising rate signals crashing/timing-out workers); `outbox` backlog (pending rows + max age) per network; Postgres pool / autovacuum / replication lag.
 - **Tracing (OpenTelemetry)** — `job_id` as baggage.
 - **DLQ alerts** — any `*.dead` message > 5 min pages.
 - **Outbox alerts** — outbox backlog > N for > N min pages.
-- **Heartbeat-staleness alerts** — sweeper rescue rate above baseline indicates churning workers.
+- **Redelivery alerts** — `redelivered` rate above baseline indicates churning/crashing/timing-out workers (was: heartbeat-staleness / sweeper-rescue alert).
 
 ### 6.4 Scaling for 1M jobs/month
 
 - **Workers** scale horizontally per phase.
 - **OutboxRelay** — 2–3 replicas per network competing via `FOR UPDATE SKIP LOCKED`.
-- **RabbitMQ** — quorum queues, single broker per network. Topology as `definitions.json`; tunables as policies.
-- **Postgres** — no partitioning day-1. Year-2: monthly partitioning on `chunk`, `expected_chunk`, `outbox`. PgBouncer in transaction-pooling mode.
-- **Sweepers** — single sweeper-enabled replica per service (`SWEEPER_ENABLED=true`). Per-row CAS gates make duplicate sweepers safe.
+- **RabbitMQ 3.13** — quorum queues, **3-node cluster per network** (odd-sized for Raft majority; each queue replicated across all 3 → survives one node loss). Topology as `definitions.json`; tunables (`delivery-limit=20`, `consumer_timeout`, `dead-letter-strategy=at-least-once`, `x-max-length`, TTL) as policies. Single-node = broker SPOF, [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §20.
+- **PostgreSQL 16** — one cluster per network; no partitioning day-1. Year-2: monthly partitioning on `chunk`, `expected_chunk`, `outbox`. PgBouncer in transaction-pooling mode.
+- **Job-level sweepers** (Network B only: `TimeoutSweeper`, `ReportPendingSweeper`) — single sweeper-enabled replica (`SWEEPER_ENABLED=true`). Per-row CAS gates make duplicate sweepers safe. There are no per-phase row-heartbeat sweepers (removed; see §3.3).
 
 ### 6.5 Storage tier choice
 
+The client confirmed (interim) that every pod can read **and** write-many to every folder ([`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §15/§16), so all shared dirs are treated as RWX-capable with **no node-affinity pinning**.
+
 | Volume | Default | Why |
 |--------|---------|-----|
-| **A `work/{job_id}/`** | Local PV (RWX or RWO) | Throughput modest at 4 jobs/sec. |
-| **A outbox dirs (data + manifest)** | Local filesystem | Proxy contract — filesystem-watched. |
-| **B proxy delivery dir** | Local PV (RWX shared by ProxyListener + Assembly) | Chunks live here for the full job lifetime. Assembly reads in-place during concat. Owned and cleaned up by NetworkB. |
-| **B `work/{job_id}/assembled/`** | Local PV | Assembled file output (concat target). |
-| **B target_path** | Filesystem | Client interface. |
+| **A `work/{job_id}/`** | RWX PV | Throughput modest at 4 jobs/sec; RWX assumed (every pod can read+write). |
+| **A outbox dirs (data + manifest)** | RWX filesystem | Proxy contract — filesystem-watched; written via `.tmp + rename` (proxy ignores `.tmp`). |
+| **B proxy delivery dir** | RWX PV (shared by ProxyListener + Assembly) | Chunks live here through assembly; Assembly reads in-place during concat and best-effort deletes consumed chunks post-COMMIT; Reporter sweeps the remainder on terminal job and the proxy self-cleans days-old leftovers. |
+| **B `work/{job_id}/assembled/`** | RWX PV | Assembled file output (concat target). |
+| **B target_path** | Network share (NFS/SMB) | Client interface; written directly from the ReverseConverter pod via `.tmp + rename`; overwrite on filename collision (last-writer-wins). |
 
-`IStorage` abstracts binding (`Local` vs `S3`).
+`IStorage` abstracts only the filesystem binding. No S3-compatible object store is available ([`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §10) — all volumes are filesystem-backed.
 
 ### 6.6 Retention & cleanup
 
 - **A:** when proxy completes pickup, Split.Worker's cleanup cron deletes chunk files and `work/{job_id}/`. Backup cron sweeps outbox dirs older than `proxy_max_transit + safety_margin`.
+- **B (per assembled file):** Assembly best-effort deletes the consumed chunk files from the proxy delivery dir immediately after the assembling COMMIT (post-COMMIT, failures ignored), freeing disk incrementally instead of at job end.
 - **B (terminal job):** Reporter (on `job.status IN ('Done','Failed','TimedOut','PartiallyDone')`) deletes:
   1. `work/{job_id}/assembled/` (assembled intermediates)
-  2. All chunk files in the proxy delivery dir referenced by `expected_chunk.name` for this job (chunks are not needed once the job is terminal)
-  3. Job-header file and all per-file manifest files in the proxy delivery dir for this job
-  After deletes succeed, sets `job.cleaned_at=now()`.
+  2. Any chunk files still remaining in the proxy delivery dir for this job (most were already deleted by Assembly post-COMMIT; this catches chunks of Failed/partial files Assembly never consumed), referenced by `expected_chunk.name`
+  3. Job-header file and all per-file manifest files and sentinels in the proxy delivery dir for this job
+  After deletes succeed, sets `job.cleaned_at=now()`. As a final backstop, the proxy self-cleans days-old leftover files from its delivery dir.
 - Backup cron: `cleaned_at IS NULL AND status IN ('Done','Failed','TimedOut','PartiallyDone') AND updated_at < now() - 1d`.
 - **Postgres:** cleanup cron DELETEs terminal-job rows older than retention. Year-2: monthly partitioning + `DROP PARTITION`.
 - **Outbox rows:** deleted N days after `published_at` IS NOT NULL.
@@ -898,20 +858,16 @@ Two-stat synchronous: `stat` → sleep 200ms → `stat`, compare size + mtime.
 
 ### 6.9 Crash resilience checklist
 
-- [x] Every worker step is idempotent via per-row status CAS.
-- [x] Heartbeat refreshes `last_heartbeat_at` (10s) while work is in flight.
-- [x] Phase sweeper resets stale rows whose heartbeat lapsed beyond 30s.
-- [x] Next-step publishes routed through transactional outbox → OutboxRelay (~500ms).
-- [x] Assembly concat happens before COMMIT and before outbox row insert → no publish-vs-file timing race.
-- [x] On-disk artifacts have deterministic names → safe rewrites with identical bytes.
-- [x] Counters incremented inside the same tx as the child CAS; only the CAS winner increments.
-- [x] All side-effects gated by terminal-status short-circuit.
-- [x] ProxyListener inbox PK on `file_path` dedups proxy redeliveries; `published` flag is the buffer / drain marker.
-- [x] File-manifest handler does inline-drain of its own buffered chunks in one tx; the job-header handler drains buffered rows in **bounded batches** (`DRAIN_BATCH`=500/tx, §5.3) so a delayed-header backlog never holds locks for one giant tx. Job row committed first; each batch commits independently → drain resumes idempotently on redelivery.
-- [x] Per-file mini-manifest written BEFORE committing terminal DB status → heartbeat sweeper recovery covers crash between file-write and commit.
-- [x] `manifest_written` flag on `source_file` prevents double-counting across retries; sweeper never resets it.
-- [x] DLQ consumer writes mini-manifest (if `manifest_written=FALSE`) before flipping status; same write-before-commit sequencing.
-- [x] Per-file mini-manifest carries per-file failure status so NB never waits for chunks that will never arrive.
+Each invariant is detailed in its canonical section; this is the audit index.
+
+- [x] **Idempotent step + single done-CAS, ack-after-COMMIT** (§3.3) — no `-ing` states; an unacked message always reflects unfinished work; a redelivery/concurrent-duplicate loses the CAS and no-ops (state, counters, and side-effects all gated by it).
+- [x] **Recovery = broker redelivery + client-side watchdog** (§3.3) — crash/network-death via channel close (seconds–~60s), deadlock via watchdog/`consumer_timeout`; `prefetch=1` caps requeue blast radius; quorum `delivery-limit` / app `max_retries=5` is the poison backstop. No per-phase row heartbeat or sweeper.
+- [x] **Next-step publish via transactional outbox → OutboxRelay** (§3.3) — ~500ms; closes the post-COMMIT-pre-publish gap.
+- [x] **Counters incremented in the CAS-winning tx, gated by the status guard** (§3.4) — exactly-once across redeliveries/duplicates; no `manifest_written` flag.
+- [x] **Write-before-commit for any file NB depends on** (§3.4 step 5, §3.5 DLQ, §3.7 sweeper) — mini-manifest / assembled bytes land on disk before the terminal-status commit; a redelivery re-writes identical bytes. The mini-manifest carries per-file failure status so NB never waits on chunks that will never arrive.
+- [x] **Deterministic on-disk names + `.tmp` + rename everywhere** (§4.2) — safe concurrent-duplicate rewrites; the proxy and `target_path` consumer ignore `.tmp`; Assembly concat sequenced before the outbox insert (§5.3) → no publish-vs-file race.
+- [x] **Early arrivals buffered, not NACK-looped** (§5.3) — `inbox.published=FALSE`; file-manifest handler inline-drains its chunks in one tx; job-header handler drains in bounded batches (`DRAIN_BATCH`, job row committed first → resumes idempotently on redelivery).
+- [x] **Job-level liveness backstops** — Network B `TimeoutSweeper` (§5.7); Network A `files_manifest_written_count` + per-file DLQ-terminal + `TimeoutSweeper-A` (§3.7). Both 30-min SLA; guarantee terminal even for a watchdog-evading hang or a wedged dead-letter target.
 
 ---
 
@@ -921,16 +877,19 @@ Two-stat synchronous: `stat` → sleep 200ms → `stat`, compare size + mtime.
 |---------|-----|
 | Temporal (workflows, signals, activities) | Replaced by Rabbit + Postgres + idempotent workers. |
 | SHA256 compute & verify | Per user instruction; deterministic chunk names + UNIQUE constraints provide placement integrity. |
-| `.tmp` + rename on proxy outbox | Per user instruction; staging-subdir + mv to final filename. |
 | Global "wait for all chunks of a package" | Per user instruction; per-file batch finalization. |
-| Repack of nested archives on NetworkB | Per user instruction; assembled files placed flat under `target_path`. |
+| Repack of nested archives on NetworkB | Per user instruction; assembled files placed at their `original_relative_path` under `target_path`, with archive containers rendered as `name_ext` directories (last dot → underscore; encoded by Prepare on Network A, see §5.5). |
 | `processed_message`, `counter_event`, `file_finalized_dedup`, `split_completed` | Replaced by per-row status CAS. |
+| **Per-row heartbeat loop + per-phase heartbeat sweeper** | Replaced by broker redelivery + `consumer_timeout` (§3.3). Crash/network-death recover via channel/connection close; deadlock via `consumer_timeout`. Crash recovery is *faster* than the old ~90s sweeper because no `-ing` row blocks the redelivery from reprocessing. |
+| **Intermediate `-ing` states** (`Preparing`, `Converting`, `Splitting`, `ReverseConverting`) | Replaced by done-states only. Each step does idempotent work then a single done-CAS; no claim/in-progress state to get stuck or to require sweeping. |
+| **`worker_id` / `last_heartbeat_at` columns + `*_stale_hb` indexes** | Removed from `job`/`source_file`/`expected_file` (A and B). Processing-worker visibility comes from logs/traces, not DB columns. |
+| **`source_file.manifest_written` flag** | Redundant under done-states: the `Converted→Split` (and terminal-Failed) CAS is itself the exactly-once counter gate. |
 | Advisory locks, consistent-hash exchange, leader-elected sweepers, day-1 partitioning, session-pool PgBouncer route, path-sharded work dirs, async two-stat stability check | Deferred. |
 | NACK+requeue for chunks-before-manifest | Replaced by inbox buffering (`published=FALSE`) + manifest-time inline drain. |
 | Per-chunk holding files in NetworkB work dir | Replaced by reading chunks in-place from the proxy delivery dir during concat. |
 | Single end-of-job manifest | Replaced by job header (`{job_id}.job.json` written by Prepare) + per-file mini-manifests (`{job_id}_{source_file_id}.file.json` written by Split). NB starts assembling each file as soon as its mini-manifest and chunks arrive. |
 | `ManifestPending` / `ManifestWritten` job states | Replaced by `files_manifest_written_count` counter + `AllManifestsWritten`. No single "last writer" coordination; each Split.Worker handles its own file independently. |
-| ManifestSweeper | Eliminated. Per-file write-before-commit sequencing + heartbeat sweeper recovery covers all crash scenarios without a dedicated sweeper. |
+| ManifestSweeper | Eliminated. Per-file write-before-commit sequencing + broker redelivery covers all crash scenarios without a dedicated sweeper. |
 
 ---
 
@@ -975,9 +934,8 @@ src/
     Dintinct.B.Infrastructure/
   Shared/
     Dintinct.Shared.Contracts/
-    Dintinct.Shared.Messaging/
+    Dintinct.Shared.Messaging/                # consumer base: prefetch=1, done-CAS helper, ack-after-commit
     Dintinct.Shared.Storage/
-    Dintinct.Shared.Heartbeat/                # heartbeat loop helper used by every worker
     Dintinct.Shared.Outbox/                   # outbox writer + relay base
 deploy/
   openshift/
@@ -1007,19 +965,15 @@ docs/
 
 All in-document clarifications resolved. Remaining client-facing items in [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md):
 
-1. Proxy-outbox safe-write strategy (staging-subdir + mv vs. proxy debounce).
-2. Average files-per-job (drives year-2 partitioning + ingestion-split trade-off).
-3. Storage retention SLA per volume.
-4. ~~Converter cardinality~~ — ✅ answered **1→1** (tables collapsed; see §3.2/§3.4).
-5. Confirm 4-channel ingestion split.
-6. Local-PV vs. S3 storage default.
+1. Average files-per-job (§8) — client has no data; average job ~5 min excluding proxy transit. Drives year-2 partitioning + ingestion-split trade-off.
+2. Storage retention SLA per volume (§9).
 
 Resolved in this revision (recorded for traceability):
 
 | # | Item | Resolution |
 |---|------|------------|
 | 1 | Outbox scope | Both A and B. OutboxRelay per network. |
-| 2 | Heartbeat intervals | 10s all phases. Sweeper threshold 30s. Configurable via `phase_config`. |
+| 2 | ~~Heartbeat intervals~~ → **Recovery model (revised)** | Per-row heartbeat + per-phase sweeper **removed**. Recovery = broker redelivery + `consumer_timeout` (§3.3). `consumer_timeout` sized from measured max step time (calibration); `prefetch=1`; AMQP connection-heartbeat 60s. Per-phase heartbeat retained only as an escape hatch via `phase_config`. |
 | 3 | `max_retries` default | 5. |
 | 4 | A-side Failed analog | `source_file.status='Failed'`. Per-file mini-manifest carries failure status so NB creates `expected_file` terminal directly. |
 | 5 | Transient/permanent | Exception-type whitelist (§3.5, §5.8). Unknown → transient. |
@@ -1027,6 +981,16 @@ Resolved in this revision (recorded for traceability):
 | 7 | Concat owner | Assembly, inside the winning-CAS handler, before COMMIT (file IO sequenced before outbox insert). |
 | 8 | Timeout SLA | 30 minutes from `coalesce(job_header_received_at, created_at)`. |
 | 9 | End-of-job manifest | Replaced by job header (Prepare) + per-file mini-manifests (Split). NB can start assembling each file immediately on mini-manifest arrival; no global wait. |
-| 10 | Manifest write crash safety | Write-before-commit sequencing: mini-manifest written to disk BEFORE committing terminal DB status. Heartbeat sweeper reset → retry → re-write (idempotent) → commit. `manifest_written` flag gates counter increment (sweeper never resets it). |
+| 10 | Manifest write crash safety | Write-before-commit sequencing: mini-manifest written to disk BEFORE committing the done-CAS terminal status. Broker redelivery → retry → re-write (idempotent) → commit. The `source_file.status` done-CAS is itself the exactly-once counter gate (no `manifest_written` flag). |
 | 11 | NB job row creation trigger | Job header arrival (via Proxy) — `job_header_received_at` replaces `manifest_received_at`. `expected_file_count` set from job header's `totalSourceFiles`. |
 | 12 | ProxyListener branch count | 7 branches (was 3): chunk-before-file-manifest, job-header, file-manifest (job exists), file-manifest (no job), chunk-after-file-manifest, file-manifest ERROR sentinel, job-header ERROR sentinel. |
+| 13 | Proxy-outbox safe-write strategy | `.tmp` + rename everywhere (the proxy ignores `.tmp` files). Staging-subdir + mv workaround reverted; partial-file-pickup risk closed (§4.1/§4.2). |
+| 14 | Proxy→B truncation guard | Proxy publishes its Rabbit message only after the file finishes moving into the proxy delivery dir; NB acts on the message, never a filesystem-watch event, so it never sees a mid-write file. Two-stat stability check kept as belt-and-suspenders (§4/§5.9). |
+| 15 | Chunk lifecycle / disk reclaim | Assembly reads chunks in-place, then best-effort deletes consumed chunks post-COMMIT per file; Reporter sweeps the remainder on terminal job; proxy self-cleans days-old leftovers as backstop (§5.1/§5.3/§6.6). |
+| 16 | Storage tier / object store | RWX assumed for all shared dirs, no node-affinity pinning (§15/§16); no S3-compatible store available (§10) — all volumes filesystem-backed; `IStorage` abstracts only the filesystem binding (§6.5). |
+| 17 | Nested-archive output layout | Archive container `name.ext` → directory `name_ext` (last dot → underscore; multi-dot names replace only the last), baked into `original_relative_path` by Prepare; NB uses it verbatim. Leaf keeps its true extension (§5.5). |
+| 18 | target_path destination | Network share (NFS/SMB), written directly from the ReverseConverter pod via `.tmp` + rename; overwrite (last-writer-wins) on filename collision (§5.5/§6.5). |
+| 19 | 4-channel ingestion split | Confirmed — 4 separate ingestion services, one per channel (§3.1). |
+| 20 | Per-`callingSystemId` configuration | All caller-varying config (folders, split file-size limit, forward + reverse conversion, SLA, timeouts) keyed by `callingSystemId` with a `default` fallback. A-side processing rule in `conversion_rule` (`(callingSystemId, source_format)`, resolution precedence in §6.1); per-network folders + SLA in `calling_system_config`. SLA is independent per network (no A→B carry); operator keeps both sides aligned. |
+| 21 | Reverse conversion is configurable, carried via manifest | Reverse conversion is no longer the inverse of the forward conversion: it is an independent per-`(callingSystemId, source_format)` target (`reverse_conversion`) that may be `null` (skip / pass-through), equal the original format, or name a different type. A resolves it; the per-file mini-manifest carries it to B (§3.6); B keeps no conversion config and obeys it (§5.5). Schema: `source_file.reverse_conversion`/`file_size_limit_mb` (A), `expected_file.reverse_conversion` (B). |
+| 22 | Job priority by `callingSystemId` | **Deferred** — RabbitMQ 3.13 quorum queues have no native message priority (4.0 only). Out of scope pending a 4.x upgrade decision; `calling_system_config` reserves the future `priority` column. [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md) §21. |
