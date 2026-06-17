@@ -320,6 +320,21 @@ Crucially, crash recovery is now **faster** than the old ~90s sweeper: with no `
 
 ---
 
+### S6. Retry policy + ExternalId idempotency answered (2026-06-17) ✅ APPLIED (docs)
+
+**Decision (client, 2026-06-17).**
+- **Retry = flat, no backoff.** One shared `retry` queue per network, single **60s TTL**, `max_retries=5` → `*.dead` (the R5 shared retry/dead topology). Per-phase override via `phase_config.max_retries`. The QUESTIONS §2 escalating-TTL ladder (30s/2m/10m/1h/6h), the 24h job SLA, and the separate 60-min manifest/chunk waits are **dropped**.
+- **Job SLA = 30 min default, per-`callingSystemId`** (`calling_system_config`, `default` fallback) — same mechanism as every other SLA (A §3.7, B §5.7). The single job SLA subsumes the per-phase business waits.
+- **No ExternalId idempotency.** `job.external_id` is **not unique** and not a dedup key; every submission creates a new job. The `UNIQUE` on Postgres-A `job.external_id` is **dropped**; `external_id` is pass-through correlation only.
+
+**Consequences.**
+- Resolves the retry-ladder-vs-shared-queue conflict (raised in the dev-readiness review) in favor of the already-built **flat shared-retry topology** — `definitions.json` (B12) implements one `retry` (60s TTL) + one `dead` per network, unchanged.
+- **At-least-once ingestion now creates duplicate jobs** (RabbitBridge redelivery, HTTP client retry, watcher re-pickup) — accepted; per-channel dedup can be added later on the inbound message-id if needed, never on the `job` table.
+
+**Ripple (applied).** `QUESTIONS-TO-CLIENT.md` §2 + §6 → answered; `ARCHITECTURE.md` §6.2 (ExternalId bullet); `DB-SCHEMA.md` Network A `job.external_id` (UNIQUE dropped). `SUMMARY.md` choices #4 (flat 1-min/60s retry tier) + #9 (30-min SLA) were already consistent.
+
+---
+
 ## RabbitMQ review — R-series
 
 Found during RabbitMQ docs alignment check against `ARCHITECTURE.md` and `MICROSERVICES.md`. All resolved in the same pass.

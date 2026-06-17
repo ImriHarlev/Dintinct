@@ -83,7 +83,7 @@ Same table on both networks; rows differ per phase. No heartbeat/sweeper-thresho
 ```sql
 job (
   id                    UUID PRIMARY KEY,
-  external_id           TEXT UNIQUE,
+  external_id           TEXT,               -- pass-through correlation id; NOT unique, NOT a dedup key (QUESTIONS §6) — duplicate submissions create separate jobs
   request_payload       JSONB,              -- verbatim IngestionRequestPayload, for audit/replay
   source_path           TEXT,
   target_path           TEXT,

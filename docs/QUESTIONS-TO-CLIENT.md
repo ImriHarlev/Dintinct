@@ -28,19 +28,18 @@ These items need a client/stakeholder decision before final implementation.
 
 ---
 
-## 2. Retry counts and timeouts
+## 2. Retry counts and timeouts  &nbsp;✅ ANSWERED (2026-06-17) — flat retry + 30-min job SLA
 
-We've assumed defaults below. Confirm or override per phase:
+> **Client answer (2026-06-17):** **Flat retry, no backoff ladder.** One shared `retry` queue per network, single **60s TTL**, `max_retries=5` before `*.dead` (matches the R5 shared retry/dead topology). **Job-level SLA = 30 min default**, overridable per-`callingSystemId` via `calling_system_config` with `default` fallback — the same mechanism as every other SLA (A: §3.7, B: §5.7). The earlier escalating-TTL ladder, the 24h job SLA, and the separate 60-min manifest/chunk business waits are **dropped** — the single per-`callingSystemId` job SLA subsumes them (a job that never completes is forced terminal by the `TimeoutSweeper` at the SLA, regardless of which phase stalled).
 
-| Setting | Default proposed |
-|---------|------------------|
-| NetworkA per-step retry attempts | 5 (TTLs 30s, 2m, 10m, 1h, 6h) |
-| NetworkB per-step retry attempts | 5 (same ladder) |
-| Manifest-arrival wait on NetworkB | 60 minutes |
-| Chunks-arrival wait after manifest on NetworkB | 60 minutes |
-| Job-level total SLA before forced timeout | 24 hours |
+| Setting | Value |
+|---------|-------|
+| NetworkA / NetworkB per-step retries | **5**, flat — shared `retry` queue, single **60s TTL**, then `*.dead` |
+| Per-phase override | `phase_config.max_retries` (default 5) |
+| Job-level SLA before forced timeout | **30 min default**, per-`callingSystemId` (`calling_system_config`, `default` fallback) |
+| Separate manifest/chunk-arrival waits | **none** — subsumed by the job SLA |
 
-> See also **§19** — the RabbitMQ `consumer_timeout` (worker-deadlock recovery) is a separate, lower-level timer than these business-level waits, and is driven by max per-step processing time.
+> See also **§19** — the RabbitMQ `consumer_timeout` (worker-deadlock recovery) is a separate, lower-level broker timer, driven by max per-step processing time, not by these business-level values.
 
 ---
 
@@ -74,9 +73,13 @@ Confirm this is the desired output layout for the client, vs. some other flatten
 
 ---
 
-## 6. Idempotency on `ExternalId`
+## 6. Idempotency on `ExternalId`  &nbsp;✅ ANSWERED (2026-06-17) — no idempotency; always start a new job
 
-If the same `ExternalId` is submitted twice, the API returns the existing `jobId` instead of creating a duplicate. Confirm this is the desired behavior (vs. forcing a new job each time). The response in this case will also include the current job status, so the caller can distinguish "still running" from "already finished."
+> **Client answer (2026-06-17):** `external_id` is **not guaranteed unique** and is **not** a dedup key — every submission **starts a new job**. **Applied:** the `UNIQUE` constraint on Postgres-A `job.external_id` is **dropped**; `external_id` is a pass-through correlation id (carried to the CSV/callback for the caller's own correlation). ARCH §6.2 updated.
+
+Resubmitting the same `ExternalId` creates a **separate** `job` each time — the API does not return an existing `jobId`.
+
+**Accepted consequence:** with no job-level dedup, at-least-once ingestion creates duplicate jobs — RabbitBridge redelivery (broker at-least-once), HTTP client retry, or a watcher re-picking a file each spawn a fresh job that runs end-to-end. If duplicates from a specific channel become a problem, that channel adds its own dedup (e.g. on the inbound message-id), **not** the `job` table.
 
 ---
 

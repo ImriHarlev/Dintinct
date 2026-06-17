@@ -803,8 +803,8 @@ Resolution precedence (most specific wins): `(callingSystemId, sourceFormat)` �
 ### 6.2 Idempotency keys
 
 - Primary: **per-row status done-CAS** (`WHERE status='Prev'`) on every state flip — the single serialization point per step.
-- Secondary: UNIQUE constraints on natural business keys.
-- Job-level: `IngestionRequestPayload.ExternalId` is unique-indexed in Postgres-A `job`.
+- Secondary: UNIQUE constraints on natural business keys (`source_file`, `chunk`, `expected_file`, `expected_chunk`).
+- **No job-level idempotency on `ExternalId`.** `external_id` is a pass-through correlation id only — **not unique**, not a dedup key. Every ingestion submission creates a new `job` (QUESTIONS §6). Consequence: at-least-once ingestion (RabbitBridge redelivery, HTTP client retry, watcher re-pickup) can create duplicate jobs; if that becomes a problem, the affected channel adds its own dedup (e.g. message-id), not the `job` table.
 - Outbox: `outbox.id` is the publish identity; relays are at-least-once (consumers remain idempotent via CAS).
 
 ### 6.3 Observability
