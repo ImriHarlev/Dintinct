@@ -24,7 +24,7 @@ These items need a client/stakeholder decision before final implementation.
 
 **Question.** Which mitigation is acceptable, or does the proxy already debounce on inactivity? Option **B** is cheapest on our side if confirmed compatible.
 
-**Related — proxy *delivery* atomicity on the B side (BLOCKERS N7).**  ✅ **RESOLVED (2026-06-14).** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving into B's delivery dir. NetworkB acts on the message, never scans the directory mid-write, and so can never observe a truncated file — this is the truncation guard that replaces the now-dead `byte_length`-vs-observed-size check. (Original concern retained below for context.) The proxy transforms chunks in transit non-deterministically and changes their size (see §18). This means NetworkB can no longer use `byte_length`-vs-observed-size validation to detect truncation — that signal is dead. **Proxy publish-after-move (message-gated delivery) is now the truncation-detection mechanism.** Does the proxy write each delivered file atomically (e.g. temp + rename), or can NetworkB observe a file mid-write? *(Answered: NB is gated on the post-move Rabbit message, so it never observes a mid-write file.)* The 200ms two-stat check is also insufficient since byte_length is gone.
+**Related — proxy *delivery* atomicity on the B side (BLOCKERS N7).**  ✅ **RESOLVED (2026-06-14).** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving into B's delivery dir. NetworkB acts on the message, never scans the directory mid-write, and so can never observe a truncated file. This message-gated delivery is the truncation guard. **NetworkB does NOT validate chunk size against `byte_length`** — assembly is count-gated and concat proceeds regardless of any size difference; `byte_length` is carried as metadata/audit only. *(NB is gated on the post-move Rabbit message, so it never observes a mid-write file regardless.)*
 
 ---
 
@@ -148,15 +148,15 @@ When NetworkA's `IFileConverter` runs on a source file, does it ever produce **m
 
 ---
 
-## 12. Converter determinism  &nbsp;⛔ PRE-DEV BLOCKER (B10) — owned + in progress
+## 12. Converter determinism  &nbsp;✅ ASSUMED (2026-06-17) — all converters deterministic (pending client confirmation; see BLOCKERS S5)
 
-> **Status (2026-06-14):** The implementer who owns the transformation + split logic will fix the Aspose `PDF → DOCX` non-determinism via **option (a)** — make the converter deterministic. **Option (b)** (persist the first split output and re-serve the exact bytes on retry) is **kept as the documented contingency** if (a) proves infeasible. Still a pre-dev item, now owned and in progress.
+> **Status (2026-06-17):** **Working assumption — every `IFileConverter` is deterministic** (same input bytes → same output bytes). This unblocks idempotent re-split + first-writer-wins dedup (BLOCKERS S5). It is an assumption pending client confirmation, not yet a verified fact. The one known carve-out remains: the Aspose `PDF → DOCX` converter is confirmed non-deterministic (rsid + timestamps) and **must be made deterministic via option (a) before it goes live**; option (b) (persist the first split output and re-serve exact bytes on retry) stays as the documented contingency. **Determinism sign-off is still required per converter before that converter ships.**
 
 For redelivery safety, every `IFileConverter` must be **deterministic**: same input bytes → same output bytes. This matters because on a crash-retry, NetworkA re-runs the converter. If output differs, chunks already delivered to NetworkB (from the first attempt) are from a different version of the file than the chunks NetworkA re-sends — assembly is silently corrupt.
 
 > **Confirmed non-deterministic (tested 2026-06-03):** The Aspose `PDF → DOCX` converter produces different byte output on each run for the same input PDF. SHA-256 hashes of two runs differed. Root cause: Aspose embeds `rsid` revision-session IDs and timestamps in the DOCX XML on every save. This converter **cannot be used with idempotent re-split** without mitigation.
 
-**Note on `byte_length`:** The original concern about `byte_length` mismatch after retry is now superseded. The proxy transforms chunks non-deterministically and changes their size (§18), so `byte_length` is removed from the manifest protocol entirely. The determinism concern remains — but the failure mode is now mixed-version chunk assembly rather than byte_length mismatch.
+**Note on `byte_length`:** Under the byte-stable-proxy assumption (§18, BLOCKERS S5) the proxy ships chunk bytes unchanged, so `byte_length` is **valid end-to-end and is retained** in the manifest protocol as **metadata/audit only**. **NetworkB does NOT validate received chunk size against it** — assembly is count-gated and concat proceeds regardless of any size difference. (This reverses the earlier "byte_length removed because the proxy changes size" decision.) With deterministic converters, a retry re-produces byte-identical chunks, so the failure mode is neither mixed-version assembly nor byte_length mismatch.
 
 **Crisp question:** Does **every** converter in scope produce byte-identical output for byte-identical input? List any that use random seeds, current timestamp, embedded session/run IDs, hash-map iteration order, or thread-timing-dependent output.
 
@@ -167,9 +167,9 @@ For redelivery safety, every `IFileConverter` must be **deterministic**: same in
 | **All deterministic** | Idempotent re-split after crash is safe. Deterministic chunk names hold. |
 | **Some non-deterministic (confirmed: Aspose PDF→DOCX)** | Option **(a)** make converter deterministic — fix Aspose output (strip rsid, inject fixed seed/timestamp, stable ordering). Or option **(b)** persist the first split output (chunks + manifest bytes) and re-serve those exact bytes on retry instead of re-running the converter. Option (b) adds a durable per-file artifact store on NetworkA. For Aspose specifically, option (a) may not be achievable without deep Aspose API control — treat as (b) until confirmed. |
 
-**Retry strategy required regardless:** On any retry, NetworkA must re-send **all** chunks for a file (never partial). NetworkB must **overwrite** existing inbox chunks on duplicate filename (not skip/ignore). This prevents mixed-version chunks from different retry runs coexisting in NetworkB's inbox.
+**Retry strategy (under the determinism assumption):** On any retry, NetworkA re-sends **all** chunks for a file (never partial), and because the converter+splitter are deterministic, the re-sent chunks are **byte-identical**. NetworkB therefore uses **first-writer-wins** (`inbox.file_path` PK + `ON CONFLICT DO NOTHING`) — a duplicate delivery is safely ignored, not overwritten. (Supersedes the earlier "NB must overwrite (last-writer-wins)" rule, which was only needed when re-sent bytes could differ.)
 
-**Default if unanswered:** cannot safely proceed for any non-listed converter — treat determinism as unverified and require sign-off per converter before that converter goes live. Wrong assumption here causes silent data corruption, not just rework.
+**Default (current):** proceed under the deterministic-converter assumption (BLOCKERS S5), with per-converter determinism sign-off required before each converter goes live (Aspose PDF→DOCX is the known carve-out). Wrong assumption here causes silent data corruption, not just rework — so the sign-off gate is mandatory.
 
 ---
 
@@ -240,40 +240,44 @@ Work dirs default to local PV. If the worker pod dies, the PV reattaches to its 
 
 ---
 
-## 18. Proxy transform behavior  &nbsp;⚠ PARTIAL — §18.1 ✅ ANSWERED; §18.2–§18.4 still open
+## 18. Proxy transform behavior  &nbsp;✅ RESOLVED under assumption (2026-06-17) — proxy is byte-stable (ships bytes unchanged)
 
-> **Status (2026-06-14):** §18.1 (delivery atomicity) is **RESOLVED** — the proxy publishes its RabbitMQ message to NetworkB only *after* the file finishes moving, so NB never observes a mid-write file (no truncation). See annotation on §18.1 below and the resolved note in §1. **§18.2, §18.3, §18.4** (reverse-converter transform tolerance, transform scope, transform failure mode) **remain the open parts of §18.**
+> **Status (2026-06-17):** **Working assumption — the proxy does NOT transform chunk bytes** (ships each file unchanged, size-preserving), pending client confirmation (BLOCKERS S5). This matches ARCHITECTURE.md §4 ("ships each file unmodified"). Consequences: **§18.2, §18.3, §18.4 are MOOT** — there is no proxy transform for the reverse converter to tolerate, bound, or handle the failure mode of. ReverseConverter only undoes Network A's *forward* conversion per the mini-manifest's `reverse_conversion` (§5.5). `byte_length` is **reinstated** (see decisions below). §18.1 (delivery atomicity) was already RESOLVED — the proxy publishes its Rabbit message only after the file finishes moving (truncation guard).
 >
-> **Additional client side-notes (2026-06-14), folded into cleanup behavior:** NetworkB **moves/consumes** files out of the proxy folder — Assembly reads chunks in-place during concat, then best-effort deletes consumed chunks **post-COMMIT**; the proxy **self-cleans** days-old leftovers. The proxy **overwrites** files re-transferred to NetworkB with the same name + extension (supports first-writer-wins dedup under determinism).
+> **Additional client side-notes (2026-06-14), folded into cleanup behavior:** NetworkB **moves/consumes** files out of the proxy folder — Assembly reads chunks in-place during concat, then best-effort deletes consumed chunks **post-COMMIT**; the proxy **self-cleans** days-old leftovers. A re-transferred file overwrites the same name on the proxy side, but NetworkB dedups **first-writer-wins** (`inbox.file_path` PK + `ON CONFLICT DO NOTHING`) — safe because deterministic re-split yields byte-identical chunks.
 
-**Known facts (confirmed in conversation):**
-- Proxy transform is **non-deterministic**: same input bytes → different output bytes across runs.
-- Proxy **changes file size**: output size ≠ input size, and is not predictable by NetworkA.
-- NetworkA **cannot** know the post-transform `byte_length` to embed in the manifest.
-- NetworkB hosts reverse converters that may need to undo the proxy transform before assembly.
+**Assumed behavior (2026-06-17, pending client confirmation — BLOCKERS S5):**
+- Proxy is **byte-stable**: same input bytes → identical output bytes (no transform).
+- Proxy is **size-preserving**: output size = input size.
+- NetworkA therefore **knows** the exact `byte_length` to embed in the manifest, and it matches the bytes delivered to B.
+- The reverse converters on NetworkB undo only Network A's **forward** conversion (per `reverse_conversion`), not any proxy transform.
 
-**Design decisions already taken based on the above:**
-- `byte_length` field **removed** from the chunk manifest protocol. NetworkB no longer validates received size against manifest. Truncation detection relies entirely on proxy atomic delivery (§1).
-- Retry strategy: NetworkA re-sends **all** chunks for a file on any retry. NetworkB **overwrites** existing inbox entries on duplicate chunk filename (last-writer-wins). This prevents mixed-version chunks from coexisting across retry runs.
+> **Superseded premise (retained for traceability):** an earlier conversation note held the proxy transform to be non-deterministic and size-changing, which had forced `byte_length` out of the protocol and demanded last-writer-wins dedup. That premise is **reversed** by the byte-stable assumption above. If the client later confirms the proxy *does* transform bytes, revert this section and BLOCKERS S5, and reopen N9 / the dedup rule.
 
-**Open questions requiring client/operator answers:**
+**Design decisions under the byte-stable assumption:**
+- `byte_length` field **retained** in the chunk manifest protocol (`chunk.byte_length`, `expected_chunk.byte_length`, mini-manifest `byteLength`) as **metadata/audit only**. **NetworkB does NOT validate received chunk size against it** — assembly is count-gated and concat proceeds regardless of any size difference (the message-gated delivery, §1, is the truncation guard). Resolves N9 by keeping `byte_length` consistently.
+- Retry strategy: NetworkA re-sends **all** chunks for a file on any retry; deterministic re-split makes them byte-identical, so NetworkB dedups **first-writer-wins** (`ON CONFLICT DO NOTHING`) — no overwrite.
 
-1. **Proxy delivery atomicity (critical — links to §1).**  ✅ **RESOLVED (2026-06-14).** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving into the delivery dir; NetworkB acts on the message and never observes a mid-write file. This message-gated delivery is the truncation guard that replaces the dead `byte_length` check. *(Original question retained:)* Does the proxy write each chunk to NetworkB's delivery dir atomically (e.g. temp + rename, or equivalent)? With `byte_length` gone, this is the **only** mechanism preventing NetworkB from assembling a truncated chunk. If non-atomic, there is no safe truncation guard and we accept silent corruption risk.
+**Open questions — status under the byte-stable assumption:**
 
-2. **Reverse converter variant tolerance.** The proxy transform is non-deterministic. Does the reverse converter in NetworkB need to handle multiple possible transform variants of the same source content, or does it operate on content semantics only (i.e., it doesn't care about how the proxy encoded/wrapped the bytes)?
+1. **Proxy delivery atomicity (critical — links to §1).**  ✅ **RESOLVED (2026-06-14).** The proxy publishes its RabbitMQ message to NetworkB **only after** the file finishes moving into the delivery dir; NetworkB acts on the message and never observes a mid-write file. Truncation guard; `byte_length` (reinstated) is metadata only — **not** a validation check.
 
-3. **Transform scope.** Does the proxy transform apply to every chunk uniformly, or only to certain file types / size ranges? Knowing the scope helps bound the reverse converter's input surface.
+2. **Reverse converter variant tolerance.**  ✅ **MOOT** under the byte-stable assumption — no proxy transform exists, so there are no transform variants. ReverseConverter operates only on Network A's forward-converted output.
 
-4. **Transform failure mode.** If the proxy fails to transform a chunk (e.g. unsupported format), does it: (a) drop the file, (b) pass it through unchanged, or (c) write an error marker? NetworkB needs to handle whichever case applies.
+3. **Transform scope.**  ✅ **MOOT** — no proxy transform.
+
+4. **Transform failure mode.**  ✅ **MOOT** — the proxy does not transform, so there is no transform-failure mode. (Proxy *delivery* failure is still signalled by the existing `.ERROR.txt` / `.UNSUPPORTED.txt` sentinels, handled by ProxyListener branches ⑥/⑦.)
+
+> If the client later confirms the proxy DOES transform bytes, questions 2–4 reopen and the reverse-converter design must handle transform variants/scope/failure.
 
 **Impact if unanswered:**
 
-| Question | Risk if skipped |
+| Question | Status under byte-stable assumption |
 |----------|----------------|
 | §18.1 (atomic delivery) | ✅ Resolved — proxy publishes Rabbit message only after the move; NB never observes a mid-write file |
-| §18.2 (reverse converter tolerance) | Reverse converter fails or corrupts on unexpected transform variant |
-| §18.3 (transform scope) | Cannot bound reverse converter input surface; may miss edge cases |
-| §18.4 (transform failure mode) | Unexpected proxy error format causes unhandled exception or silent drop on NetworkB |
+| §18.2 (reverse converter tolerance) | ✅ Moot — no proxy transform; reopens only if the assumption is reversed |
+| §18.3 (transform scope) | ✅ Moot — no proxy transform |
+| §18.4 (transform failure mode) | ✅ Moot — no proxy transform (delivery-failure sentinels unchanged) |
 
 ---
 

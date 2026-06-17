@@ -93,7 +93,7 @@ No row cap, no Postgres `statement_timeout`, no circuit breaker documented. At 1
 
 ## MEDIUM — Schedule risk / development start blocker
 
-### B10. Three client questions that change schema or design ⏳ MOSTLY RESOLVED — Q11/Q15/Q16 answered; Q12 owned (fix in progress)
+### B10. Three client questions that change schema or design ✅ RESOLVED — Q11/Q15/Q16 answered; Q12 resolved under the deterministic-converter assumption (S5)
 Questions sharpened in `QUESTIONS-TO-CLIENT.md` §11/§12/§15/§16. **Q11 ✅ answered: 1→1** — `converted_file` collapsed into `source_file`, `chunk` keyed by `source_file_id` (resolves N3). **Q15/Q16 ✅ answered (2026-06-14, interim):** assume RWX for all shared dirs (every pod read/write-many to all folders), no node-affinity pinning; combined with **Q10 ✅ (no S3)** all volumes are filesystem-backed. **Q12 ⏳ owned/in-progress:** the transform/split implementer is making the Aspose PDF→DOCX converter deterministic (option a); persist-first-output kept as contingency (option b). Determinism sign-off still required per converter before it goes live.
 
 Must answer before building:
@@ -101,10 +101,10 @@ Must answer before building:
 | Q# | Question | Impact if wrong |
 |----|----------|-----------------|
 | Q11 ✅ | Converter cardinality: 1→1 vs 1→N? **Answered: 1→1** — tables collapsed, N3 resolved | Could collapse `source_file`+`converted_file` into one table |
-| Q12 ⏳ | Converter determinism? **Owned/in-progress** — deterministic fix (a) + persist-first-output contingency (b) | Non-deterministic converter → mixed-version chunk assembly on retry → silent data corruption on Network B |
+| Q12 ✅* | Converter determinism? **Assumed deterministic (S5)** — Aspose PDF→DOCX carve-out must be fixed + per-converter sign-off before go-live | Non-deterministic converter → mixed-version chunk assembly on retry → silent data corruption on Network B |
 | Q15/Q16 ✅ | RWX StorageClass available? **Answered (interim): assume RWX everywhere**, no S3 (Q10) | Changes all PV strategy from day one |
 
-Q12 remains the critical one: if any converter uses random seeds, current timestamp, or session IDs, the write-before-commit + idempotent re-split guarantee breaks silently. Confirmed non-deterministic so far: Aspose PDF→DOCX (embeds `rsid` + timestamps). Now owned by the transform/split implementer; each converter needs determinism sign-off before going live.
+Q12 is now handled by the **deterministic-converter working assumption (S5)**: idempotent re-split + first-writer-wins dedup are taken as safe. The guarantee still breaks silently for any converter that uses random seeds, timestamps, or session IDs, so **per-converter determinism sign-off before go-live stays mandatory**. Confirmed non-deterministic so far: Aspose PDF→DOCX (embeds `rsid` + timestamps) — must be made deterministic (option a) before it ships, with persist-first-output (option b) as contingency.
 
 ---
 
@@ -140,7 +140,7 @@ Schema in `DB-SCHEMA.md` and `ARCHITECTURE.md §3.2/§5.2` is complete. But `db/
 | B7 | HIGH | ✅ Resolved | `manifest_written` shown on `expected_file (B)` — column doesn't exist | `worker-exception-handling.drawio` vs `DB-SCHEMA.md` |
 | B8 | HIGH | ✅ Resolved | JobHeaderError inbox rows — no cleanup path | `chunk-flow.drawio` + `ARCHITECTURE.md §5.7` |
 | B9 | HIGH | ✅ Resolved | Assembly large-tx no cap or timeout | `chunk-flow.drawio` + `ARCHITECTURE.md §5.3` |
-| B10 | MED | ⏳ Mostly resolved | Q11/Q15/Q16 answered; Q12 owned/in-progress (determinism sign-off pending) | `QUESTIONS-TO-CLIENT.md` |
+| B10 | MED | ✅ Resolved (S5) | Q11/Q15/Q16 answered; Q12 resolved under deterministic-converter assumption (sign-off gate before go-live) | `QUESTIONS-TO-CLIENT.md` |
 | B11 | MED | ✅ Resolved | `inbox` table retention undocumented | `ARCHITECTURE.md §6.6` |
 | B12 | MED | ☐ Open | No `definitions.json` for Rabbit topology | `MICROSERVICES.md` |
 | B13 | MED | ☐ Open | No initial DB migration files | `ARCHITECTURE.md §9` |
@@ -161,7 +161,7 @@ Found during the post-fix dev-readiness review.
 | N6 | MED | ✅ Resolved (doc) | Reporter callback is at-least-once, doc claimed exactly-once → corrected; client idempotency required (QUESTIONS §3) | `ARCHITECTURE.md §5.6` vs `MICROSERVICES.md:45` |
 | N7 | LOW | ✅ Resolved | Stability check moot — proxy publishes Rabbit msg only after move; NB never sees mid-write file (Q1/§18.1) | `ARCHITECTURE.md §5.9` + `QUESTIONS §1` |
 | N8 | LOW | ☐ Open | ProxyListener: undefined handling for unparseable filename / missing file | `ARCHITECTURE.md §5.3` |
-| N9 | MED | ☐ Open | `byte_length` removed in QUESTIONS §18 but still present in ARCH §3.6 / DB-SCHEMA / SUMMARY #10 — cross-doc contradiction; coupled to open §18.2–.4 | `QUESTIONS §18` vs `ARCHITECTURE/DB-SCHEMA/SUMMARY` |
+| N9 | MED | ✅ Resolved (S5) | `byte_length` **kept** end-to-end under the byte-stable-proxy assumption; QUESTIONS §18 "removed" decision reversed → now consistent with ARCH §3.6 / DB-SCHEMA / SUMMARY #5/#10 | `QUESTIONS §18` vs `ARCHITECTURE/DB-SCHEMA/SUMMARY` |
 | R1 | HIGH | ✅ Resolved | `consumer_timeout` / queue type — quorum queues; **RabbitMQ 4.3** (S4, ↑ from 3.13); classic removed (see R6/S4/Q20) | `ARCHITECTURE.md §3.3` / `MICROSERVICES.md` |
 | R2 | MED | ✅ Resolved | `consumer_timeout` 5-min floor undocumented — calibration could target sub-5-min values that the broker ignores | `ARCHITECTURE.md §3.3` / `MICROSERVICES.md` |
 | R3 | HIGH | ✅ Resolved | DLX hops are at-most-once by default — silent message loss when target queue full or unavailable; fixed with `dead-letter-strategy=at-least-once` policy | `ARCHITECTURE.md §3.3` / `§3.5` |
@@ -177,9 +177,8 @@ Chunks are named `{job_id}_{source_file_id}_chunk_{index}` (§3.4 step 4) with *
 ### N7. Stability check — synchronous 200ms (LOW — ✅ RESOLVED via Q1)
 `§5.9` two-stat check (`stat` → sleep 200ms → `stat`) blocks the consumer per file and assumes 200ms suffices. **Resolved (2026-06-14):** the proxy publishes its Rabbit message to NB *only after the file has finished moving* into the proxy delivery dir, so NB acts on the message and never observes a mid-write file. The two-stat check is now belt-and-suspenders, not a correctness dependency — it can stay (cheap) or be dropped. No size-validation against `byte_length` is needed (and `byte_length` is contested — see N9).
 
-### N9. `byte_length` cross-doc inconsistency (MED — ☐ Open, deferred to §18.2–.4)
-`QUESTIONS §18` records a design decision that `byte_length` was **removed** from the chunk manifest protocol (the proxy transform changes file size non-deterministically, so NB can't validate observed-vs-manifest size). But `byte_length` still appears in `ARCHITECTURE.md §3.6` (mini-manifest `byteLength`), `DB-SCHEMA.md` (`chunk.byte_length`, `expected_chunk.byte_length`), and `SUMMARY.md` choice #10 ("Manifest carries `byte_length`"). The same §18 also leaves "proxy ships each file unmodified" (ARCH §4) unreconciled with "proxy transforms non-deterministically" (§18). These are one open question.
-**Fix:** resolve as a single unit once the proxy-transform questions (§18.2–.4) are answered — either remove `byte_length` end-to-end (if the non-deterministic, size-changing transform stands) or reinstate it in QUESTIONS §18 (if the transform is in fact size-preserving / absent). Do not half-change now.
+### N9. `byte_length` cross-doc inconsistency (MED — ✅ RESOLVED via S5)
+**Resolved by the byte-stable-proxy assumption (S5).** With the proxy shipping bytes unchanged and size-preserving, `byte_length` is **valid and kept** end-to-end. QUESTIONS §18's "removed" decision is **reversed**, so it now agrees with `ARCHITECTURE.md §3.6` (mini-manifest `byteLength`), `DB-SCHEMA.md` (`chunk.byte_length`, `expected_chunk.byte_length`), and `SUMMARY.md` choices #5/#10. The §4 "ships each file unmodified" wording is now consistent with §18 (no transform). `byte_length` is **metadata/audit only — NB does NOT validate received chunk size against it**; assembly is count-gated and concat proceeds regardless of any size difference (the message-after-move delivery, §1, is the truncation guard). **Reversal:** if the client confirms the proxy transforms/resizes bytes, reopen this (remove `byte_length`) together with §18.2–.4.
 
 ### N8. ProxyListener — undefined edge branches (LOW)
 No documented handling for: (a) a filename matching none of the 7 patterns (e.g. unparseable `job_id`), or (b) a proxy message whose `filePath` no longer exists on disk. Likely → unhandled exception → DLQ with no recovery path.
@@ -294,6 +293,30 @@ Crucially, crash recovery is now **faster** than the old ~90s sweeper: with no `
 **Diagrams not yet updated** (`.drawio` untouched). Follow-up: any `RabbitMQ 3.13` labels → `4.3`; note OutboxRelay sets message priority. Combine with the S3 diagram follow-ups.
 
 **Open after this batch:** §20 cluster size (3-node recommended); >2 priority tiers not possible on quorum (raise only if requested). S3's open items unchanged.
+
+---
+
+### S5. Working assumption: deterministic converters + byte-stable proxy (2026-06-17) ✅ APPLIED (docs)
+
+**Decision.** For development, **assume** (pending client confirmation, reversible): (a) every `IFileConverter` is **deterministic** (same input bytes → same output bytes), and (b) the **proxy is byte-stable** — ships each chunk unchanged and size-preserving (matches ARCHITECTURE.md §4 "ships each file unmodified"). This is a project working assumption, not a client answer.
+
+**Why.** It removes the two remaining hard correctness blockers (§12 determinism, §18.2–.4 proxy transform) so the byte-exact data plane (Convert / Split / chunk naming / Assembly concat / ReverseConverter) can be built now. Both are independently plausible — the proxy spec already says "unmodified," and converter determinism is achievable per converter.
+
+**Consequences (applied in docs).**
+- **§12 → ✅ assumed resolved.** Idempotent re-split is safe; first-writer-wins dedup holds. **Carve-out:** Aspose `PDF → DOCX` is confirmed non-deterministic and must be made deterministic (option a) before it ships; persist-first-output (option b) stays as contingency. **Per-converter determinism sign-off remains mandatory before each converter goes live.**
+- **§18.2 / §18.3 / §18.4 → ✅ moot.** No proxy transform to tolerate, bound, or fail. ReverseConverter undoes only A's forward conversion (`reverse_conversion`, §5.5).
+- **`byte_length` REINSTATED end-to-end as metadata/audit only (resolves N9 by keeping, not removing).** Proxy byte-stability makes the manifest `byteLength` match delivered bytes. **NB does NOT validate received chunk size against `byte_length`** — assembly is count-gated (`received_chunk_count == expected_chunk_count`) and concat proceeds regardless of any size difference; the message-after-move delivery (§1) is the truncation guard. Kept in `chunk.byte_length`, `expected_chunk.byte_length`, mini-manifest `byteLength`, SUMMARY #5/#10 — all already consistent; only QUESTIONS §18's "removed" decision is reversed.
+- **Dedup = first-writer-wins, single rule.** `inbox.file_path` PK + `ON CONFLICT DO NOTHING`. The QUESTIONS §12/§18 "NB must overwrite (last-writer-wins)" contingency text is removed — it was only needed when re-sent bytes could differ.
+
+**Ripple effects (applied).**
+- `QUESTIONS-TO-CLIENT.md`: §1 (byte_length reinstated note), §12 (header/status/byte_length/retry/default → assumed-deterministic), §18 (header/status/known-facts→assumed/decisions/open-Qs/impact → byte-stable).
+- `BLOCKERS.md`: B10 → resolved-under-assumption; N9 → resolved (byte_length kept); this S5 entry.
+- `ARCHITECTURE.md`: §3.4 step 3 determinism note (Aspose fix → assumed-deterministic + sign-off gate).
+- `SUMMARY.md`: open-questions determinism line.
+
+**Reversal trigger.** If the client confirms converters can be non-deterministic, or the proxy DOES transform/resize bytes: revert this entry, reopen §12 (mixed-version corruption), §18.2–.4 (reverse-converter transform handling), N9 (remove byte_length), and switch dedup back to last-writer-wins. This is the single load-bearing assumption for the whole data-plane correctness story.
+
+**Still TRUE regardless of this assumption:** per-converter determinism sign-off before go-live (Aspose carve-out); the message-after-move truncation guard (§1) stays primary.
 
 ---
 

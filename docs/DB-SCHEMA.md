@@ -317,7 +317,7 @@ expected_chunk (
   job_id           UUID,
   index            INT,
   name             TEXT,                  -- proxy filename; resolved against proxy delivery dir at concat time
-  byte_length      BIGINT,
+  byte_length      BIGINT,                -- metadata/audit only; NEVER validated against received bytes (assembly is count-gated)
   received_at      TIMESTAMPTZ NULL,      -- set when the chunk file is durable in the proxy delivery dir (post-stability-check)
   UNIQUE (expected_file_id, index)
 );
@@ -325,6 +325,8 @@ CREATE INDEX expected_chunk_pending ON expected_chunk(expected_file_id) WHERE re
 ```
 
 > Chunk processing is atomic (single CAS + counter increment + concat-if-last). Chunk bytes are NEVER copied — Assembly reads them in-place from `proxy_delivery_dir/<name>` during concat. Immediately after the assembling COMMIT, Assembly best-effort deletes the consumed chunk files (per assembled file; failures ignored). No long-running worker ownership on this row — no heartbeat columns.
+
+> **Completion is count-based** (`received_chunk_count == expected_chunk_count`). `byte_length` is **never** validated against the bytes received — assembly concatenates regardless of any size mismatch. It is retained as metadata/audit only.
 
 ---
 

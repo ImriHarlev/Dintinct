@@ -32,7 +32,7 @@ A separate **OutboxRelay** process per network publishes durable outbox rows to 
 7. **A-side failures carried in per-file mini-manifests.** When a `source_file` ends in `Failed`/`NotSupported`, its mini-manifest (`{job_id}_{source_file_id}.file.json`) carries that status and `failure_reason`. NB's Assembly (`file-manifest-errors.received` handler) creates `expected_file` directly in the terminal state with no `expected_chunk` rows and emits `files.finalized`; Reporter's terminal-count picks them up immediately.
 8. **Worker exception handling: transient vs permanent (exception-type whitelist).** Transient (`SqlException`, `BrokerUnreachableException`, `IOException`, `TimeoutException`, etc.) → `nack(requeue=false)` → `*.retry` (1-min TTL) → up to 5 retries. Permanent (`UnsupportedFormatException`, `FileCorruptException`, `ConversionException`, `ValidationException`) → `UPDATE source_file/expected_file SET status='Failed'` → `nack(requeue=false)` → `*.dead`. Unknown → transient by default. **Job-level `Failed` is set ONLY by Reporter (all files failed) or TimeoutSweeper (SLA exceeded).** Workers never set `job.status='Failed'` directly.
 9. **Timeout SLA = 30 minutes** from `coalesce(job_header_received_at, created_at)`. Configurable per deployment.
-10. **Manifest carries `byte_length` per chunk** (replacing SHA256).
+10. **Manifest carries `byte_length` per chunk** (replacing SHA256) — **metadata/audit only**; NB does **not** validate received chunk size against it (assembly is count-gated, concat proceeds regardless of any size difference).
 11. **No advisory locks, no consistent-hash routing.** Per-row CAS + WHERE clauses + outbox give all race-safety needed.
 12. **RWX assumed for all shared dirs** (client-confirmed interim: every pod has read/write-many access to all folders). Proxy delivery dir on B is RWX shared between ProxyListener and Assembly (chunks read in-place + best-effort deleted post-COMMIT). **No S3 available — filesystem-only.**
 13. **PgBouncer** (transaction pooling) in front of each Postgres; **schema migrations via OpenShift Job**; **Sealed Secrets** for credentials.
@@ -76,7 +76,7 @@ See [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md). Headline items:
 5. ~~RabbitMQ version + queue type~~ — ✅ resolved: **RabbitMQ 4.3, quorum queues, 3-node cluster per network** (§20). Remaining sub-item: confirm 3-node vs single-node (single = accepted broker SPOF).
 6. ~~Per-`callingSystemId` configuration model~~ — ✅ resolved (§21): per-caller config with `default` fallback; `conversion_rule` (A) + `calling_system_config` (both); reverse conversion carried in the mini-manifest. **Job priority by `callingSystemId` enabled** on RabbitMQ 4.3 (native quorum message priority) — `calling_system_config.priority` → `job.priority` → `outbox.priority` → AMQP priority on publish; no priority-lane queues.
 
-In progress: converter determinism (Aspose PDF→DOCX) fix is owned by the transform/split implementer (persist-first-output as documented contingency).
+Working assumption (BLOCKERS S5): all converters are deterministic and the proxy is byte-stable (ships bytes unchanged) — this unblocks the data plane. Aspose PDF→DOCX is the known non-deterministic carve-out and must be made deterministic before go-live; per-converter determinism sign-off stays mandatory. `byte_length` is kept end-to-end (N9 resolved).
 
 All in-document `[NEED CLARIFICATION]` markers from the previous revision are resolved (see ARCHITECTURE.md §10 resolutions table).
 
