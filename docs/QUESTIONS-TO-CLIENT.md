@@ -371,3 +371,19 @@ The client opted to upgrade to **RabbitMQ 4.3** (§20), whose quorum queues supp
 **Strict priority — starvation is the constraint to communicate:** quorum priority is *strict* (higher always dispatched before lower, no fairness). A caller that submits high-priority work continuously **can starve** lower-priority jobs across the shared queues. Mitigations: keep the priority spread tight, reserve the top of the range for genuinely urgent callers, and alert on per-priority queue depth. The 30-min job SLA (§2) still backstops any starved job into a `TimedOut` rather than hanging forever.
 
 **Status:** config model **and** priority **applied to docs**. Open item: cluster size (§20, 3-node recommended).
+
+---
+
+## 22. Large-file (video) handling & per-engine SLA  &nbsp;⏳ OPEN — surfaced by the File Conversion Table
+
+> **Context (2026-06-25):** The client's File Conversion Table groups all conversions into **3 engines** — ImageMagick (images→PNG, 200 MB), Aspose (pdf/ppt/pptx→DOCX, 100–200 MB), and **ffmpeg (all audio+video→MP4/H264/AAC, `FileSizeLimitMb=6000`)**. The converter is split by engine accordingly (one codebase deployed per group; ARCHITECTURE §3.1/§5.1/§10 #23). The video group's **6 GB chunk-size limit** is an order of magnitude larger than every other group and drives this question.
+
+**Engine grouping (decided, recorded for confirmation).** Convert deploys 3× on A (`files.convert.image|doc|video`) and Reverse deploys 2× on B (`files.reverse.image|doc`; no video — every A/V row's Target Format is "No conversion needed", so it delivers as-is). Pass-through formats (docx, doc, xls, xlsx, xml, rtf, srt, json, txt, kml) and the rename-to-TXT group (obj, mtl, tfw, csv, upscsv) carry `converter_group=NULL` and skip the converter entirely. **Confirm this grouping matches operational expectations** (e.g. Aspose licensing scope, ffmpeg node pool).
+
+**Crisp questions:**
+1. **Video SLA.** A multi-GB ffmpeg transcode + a 6 GB split + cross-proxy transit + B-side concat can far exceed the 30-min default job SLA (§2). What SLA should the `video` group's callers get? (Per-`callingSystemId` SLA already supports a different value — `calling_system_config.sla_minutes`.)
+2. **Storage sizing for 6 GB chunks.** Are A's work/outbox dirs, the proxy delivery dir, and B's assembled work dir provisioned for multi-GB files at the expected video concurrency? (Couples with §9 retention and §15/§16 RWX.)
+3. **`consumer_timeout` per group.** Confirm the `video` queue gets a much larger `consumer_timeout` + watchdog bound than image/doc (calibrated from real transcode times; ARCHITECTURE §3.3).
+4. **Rename-to-TXT transit.** obj/mtl/tfw/csv/upscsv are relabeled to `.txt` for transit then delivered at their original extension (the table's Target Format). Confirm this relabel is only to satisfy a proxy extension allow-list and the bytes are unchanged (no engine).
+
+**Impact if unanswered:** ship with one 30-min SLA + uniform pod sizing; video jobs that exceed it get forced to `TimedOut` by the sweeper (no data loss, but a false timeout). Per-group SLA/resources are deploy-time config — reversible without code.

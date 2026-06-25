@@ -1,0 +1,135 @@
+#,Source Format,Convert To,Size Limit (MB),Target Format
+1,avif,PNG,200,avif
+2,webp,PNG,200,webp
+3,gif,PNG,200,gif
+4,jpg,PNG,200,jpg
+5,jpeg,PNG,200,jpeg
+6,heic,PNG,200,heic
+7,png,PNG,200,png
+8,bmp,PNG,200,bmp
+9,tga,PNG,200,tga
+10,tif,PNG,200,tif
+11,tiff,PNG,200,tiff
+12,jfif,PNG,200,jfif
+13,txt,Direct to proxy,300,txt
+14,obj,TXT,300,obj
+15,mtl,TXT,300,mtl
+16,tfw,TXT,300,tfw
+17,csv,TXT,300,csv
+18,upscsv,TXT,300,upscsv
+19,kml,Direct to proxy,200,kml
+20,docx,Direct to proxy,250,No conversion needed
+21,doc,Direct to proxy,250,No conversion needed
+22,pdf,DOCX,200,PDF
+23,ppt,DOCX,100,PDF
+24,pptx,DOCX,100,PDF
+25,xls,Direct to proxy,50,No conversion needed
+26,xlsx,Direct to proxy,50,No conversion needed
+27,xml,Direct to proxy,50,No conversion needed
+28,rtf,Direct to proxy,50,No conversion needed
+29,srt,Direct to proxy,50,No conversion needed
+30,json,Direct to proxy,300,No conversion needed
+31,3g2,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+32,3gp,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+33,3gp2,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+34,3gpp,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+35,amv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+36,asf,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+37,avi,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+38,bik,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+39,divx,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+40,drc,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+41,dv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+42,f4v,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+43,gvi,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+44,gxf,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+45,m1c,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+46,m1v,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+47,m2t,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+48,m2ts,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+49,m2v,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+50,m4v,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+51,mkv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+52,mov,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+53,mp2,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+54,mp2v,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+55,mp4,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+56,mp4v,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+57,mpa,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+58,mpe,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+59,mpeg,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+60,mpeg1,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+61,mpeg2,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+62,mpeg4,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+63,mpg,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+64,mpv2,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+65,mtc,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+66,mts,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+67,mtv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+68,mxf,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+69,mxg,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+70,nsv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+71,nuv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+72,ogg,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+73,ogm,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+74,ogv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+75,ogx,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+76,ps,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+77,rec,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+78,rm,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+79,rmvb,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+80,rpl,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+81,thp,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+82,tod,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+83,tts,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+84,vob,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+85,vro,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+86,webm,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+87,wemb,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+88,wm,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+89,wmv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+90,xesc,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+91,3ga,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+92,669,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+93,a52,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+94,aac,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+95,ac3,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+96,adt,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+97,adts,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+98,aif,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+99,aifc,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+100,amr,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+101,aob,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+102,ape,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+103,au,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+104,caf,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+105,cda,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+106,dts,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+107,flac,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+108,it,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+109,m4a,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+110,m4p,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+111,mid,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+112,mka,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+113,mlp,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+114,mod,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+115,mp1,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+116,mp3,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+117,mpc,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+118,mpga,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+119,oga,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+120,oma,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+121,qcp,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+122,ra,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+123,rmi,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+124,s3m,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+125,snd,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+126,spx,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+127,tta,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+128,voc,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+129,vqf,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+130,w64,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+131,wma,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+132,wv,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+133,xa,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed
+134,xm,MP4 / Video codec H264 / Audio codec AAC,6000,No conversion needed

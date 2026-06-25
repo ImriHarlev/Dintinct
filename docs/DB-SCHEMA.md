@@ -57,11 +57,12 @@ conversion_rule (
   required_conversion TEXT NULL,            -- forward target → source_file.applied_conversion; NULL = pass-through
   reverse_conversion  TEXT NULL,            -- reverse target carried to NB in mini-manifest; NULL = NB skips reverse
   file_size_limit_mb  INT NULL,             -- Split.Worker max bytes per chunk → source_file.file_size_limit_mb
+  converter_group     TEXT NULL,            -- engine routing (ARCHITECTURE §3.1/§10 #23): 'image'|'doc'|'video' → files.convert.{group}; NULL = no engine (pass-through/rename) → straight to files.split
   PRIMARY KEY (calling_system_id, source_format)
 );
 ```
 
-> Resolution precedence (most specific wins): `(callingSystemId, sourceFormat)` → `(callingSystemId, 'default')` → `('default', sourceFormat)` → `('default', 'default')`. Convert.Worker resolves once and **snapshots** the three derived values onto the `source_file`, freezing the rule for the life of the job (mid-job config changes don't split a job's forward/reverse/sizing).
+> Resolution precedence (most specific wins): `(callingSystemId, sourceFormat)` → `(callingSystemId, 'default')` → `('default', sourceFormat)` → `('default', 'default')`. **Prepare.Worker** resolves once (moved here from Convert — it must resolve `converter_group` to route the file, and pass-through files skip Convert) and **snapshots** the four derived values (`applied_conversion`, `reverse_conversion`, `file_size_limit_mb`, `converter_group`) onto the `source_file`, freezing the rule for the life of the job (mid-job config changes don't split a job's forward/reverse/sizing/routing).
 
 ---
 
@@ -119,8 +120,9 @@ source_file (
   original_format        TEXT,
   applied_conversion     TEXT NULL,        -- forward conversion applied (conversion_rule.required_conversion); NULL = pass-through
   converted_relative_path TEXT NULL,       -- 1→1 converter output (Q11); = original_relative_path for pass-through
-  reverse_conversion     TEXT NULL,        -- snapshotted from conversion_rule at Convert; carried to NB in mini-manifest; NULL = NB skips reverse
-  file_size_limit_mb     INT NULL,         -- snapshotted from conversion_rule at Convert; Split chunk-size cap (max bytes/chunk)
+  reverse_conversion     TEXT NULL,        -- snapshotted from conversion_rule at Prepare; carried to NB in mini-manifest; NULL = NB skips reverse
+  file_size_limit_mb     INT NULL,         -- snapshotted from conversion_rule at Prepare; Split chunk-size cap (max bytes/chunk)
+  converter_group        TEXT NULL,        -- snapshotted from conversion_rule at Prepare; engine routing ('image'|'doc'|'video'); NULL = no engine → Prepare routes to files.split (§10 #23)
   status                 TEXT,             -- Pending | Converted | Split | Failed | NotSupported  (done-states only)
   failure_reason         TEXT NULL,        -- populated on terminal Failed/NotSupported; carried into manifest
   UNIQUE (job_id, original_relative_path)
@@ -294,7 +296,8 @@ expected_file (
                                           -- `parent.zip/inner.zip/leaf.docx` → `parent_zip/inner_zip/leaf.docx`; leaf keeps its real extension.
   original_format        TEXT,
   applied_conversion     TEXT NULL,       -- forward conversion A applied (from mini-manifest)
-  reverse_conversion     TEXT NULL,       -- reverse target from mini-manifest; ReverseConverter obeys it; NULL = pass-through (no reverse)
+  reverse_conversion     TEXT NULL,       -- reverse target from mini-manifest; ReverseConverter worker obeys it; NULL = pass-through (no reverse)
+  reverse_converter_group TEXT NULL,      -- from mini-manifest (reverseConverterGroup): 'image'|'doc' → Assembly routes to files.reverse.{group}; NULL = no engine → Assembly writes through to target_path (§10 #23). Never 'video' (A/V delivers as-is).
   expected_chunk_count   INT,             -- 0 for files marked Failed/NotSupported at manifest time
   received_chunk_count   INT DEFAULT 0,
   bytes_total            BIGINT,
@@ -302,7 +305,8 @@ expected_file (
   failure_reason         TEXT NULL,       -- carried from manifest for files marked Failed/NotSupported by A
   UNIQUE (job_id, original_relative_path)
 );
--- Done-state CAS only (Pending→Assembled by Assembly; Assembled→Finalized by ReverseConverter; →terminal by Reporter).
+-- Done-state CAS only. Engine reverse: Pending→Assembled by Assembly, Assembled→Finalized by ReverseConverter worker.
+-- Pass-through (reverse_converter_group=NULL): Assembly writes through to target_path and flips Pending→Finalized directly. →terminal by Reporter.
 -- No intermediate ReverseConverting state, no heartbeat columns.
 ```
 
@@ -343,7 +347,8 @@ Same structure as Network A `outbox`.
 | Done-state CAS (`WHERE status='Prev'`; no `-ing` states, no heartbeat columns) | A: `job`, `source_file` · B: `job`, `expected_file` |
 | Transactional outbox (`BIGSERIAL` id for FIFO) | `outbox` — both networks |
 | Per-phase tuning | `phase_config` — both networks (`max_retries` default 5) |
-| Per-caller config (default fallback) | A: `conversion_rule` + `calling_system_config` · B: `calling_system_config`. Reverse-conversion instruction carried A→B in the mini-manifest. |
+| Per-caller config (default fallback) | A: `conversion_rule` (incl. `converter_group` engine routing) + `calling_system_config` · B: `calling_system_config`. Reverse-conversion instruction + `reverseConverterGroup` carried A→B in the mini-manifest. |
+| Engine routing (converter split, §10 #23) | A: `conversion_rule.converter_group` / `source_file.converter_group` → `files.convert.{image,doc,video}` (NULL → `files.split`) · B: `expected_file.reverse_converter_group` → `files.reverse.{image,doc}` (NULL → Assembly write-through) |
 | Counter increment (CAS-gated, same tx) | A: `job.files_manifest_written_count` · B: `job.finalized_file_count`, `expected_file.received_chunk_count` |
 | UNIQUE + `ON CONFLICT DO NOTHING` | `source_file`, `chunk`, `expected_file`, `expected_chunk` |
 | PK dedup | `inbox.file_path` (proxy redeliveries) — first-writer-wins; deterministic re-split yields byte-identical chunks so duplicates are safely ignored |
@@ -364,6 +369,7 @@ Same structure as Network A `outbox`.
 - **First-writer-wins dedup via determinism.** `inbox.file_path` PK + `ON CONFLICT DO NOTHING` is first-writer-wins: because converters/splitters are deterministic, a re-split after crash/timeout yields byte-identical chunks, so a duplicate proxy delivery is safely ignored (no overwrite / last-writer-wins).
 - **No ManifestSweeper.** Per-file mini-manifests eliminate single "last writer" coordination.
 - **No `manifest_written` flag.** The `source_file.status` done-CAS (`Converted→Split` / terminal-`Failed`) is itself the exactly-once gate for the `files_manifest_written_count` increment — a redelivery or concurrent duplicate loses the CAS and does not double-count.
-- **Per-`callingSystemId` config with `default` fallback.** Caller-varying settings live in `conversion_rule` (A only: `(callingSystemId, source_format)` → forward/reverse conversion + split size limit) and `calling_system_config` (both networks: folders + SLA). Resolution precedence in ARCHITECTURE.md §6.1. Convert.Worker snapshots the resolved rule onto `source_file` (frozen for the job).
+- **Per-`callingSystemId` config with `default` fallback.** Caller-varying settings live in `conversion_rule` (A only: `(callingSystemId, source_format)` → forward/reverse conversion + split size limit + `converter_group`) and `calling_system_config` (both networks: folders + SLA). Resolution precedence in ARCHITECTURE.md §6.1. **Prepare.Worker** snapshots the resolved rule onto `source_file` (frozen for the job; moved here from Convert so it can route by `converter_group` and so pass-through files that skip Convert still carry the snapshot).
+- **Converter engine grouping (§10 #23).** `conversion_rule.converter_group` (snapshotted to `source_file.converter_group`) routes Convert into 3 engine deployments via `files.convert.{image,doc,video}`; `NULL` (pass-through/rename) bypasses Convert to `files.split`. On B, `expected_file.reverse_converter_group` (carried in the mini-manifest's `reverseConverterGroup`) routes the reverse step into 2 deployments via `files.reverse.{image,doc}`; `NULL` → Assembly writes through to `target_path` and flips `Pending→Finalized` directly. No `video` reverse group. Grouping derived from the client's File Conversion Table; one codebase per side, deployed per group.
 - **Reverse conversion carried via mini-manifest, not derived on B.** `reverse_conversion` is an independent per-`(callingSystemId, source_format)` target resolved on A (may be NULL=skip, equal the source format, or a different type). It is written to the mini-manifest and persisted on `expected_file`; Network B keeps **no** conversion config. Replaces the old "reverse = inverse of `applied_conversion`" rule.
 - **Job priority enabled (RabbitMQ 4.3).** `calling_system_config.priority` (both networks, default fallback) → snapshot `job.priority` → copied to `outbox.priority` → OutboxRelay sets the AMQP message priority on publish. 4.x quorum queues honor native message priority — **32 strict levels (0–31)**, higher dispatched first, always enabled (`x-max-priority` ignored), broker default 4. Strict (no fairness) → sustained high-priority load can starve lower levels. Priority is independent per network (like SLA); no priority-lane queues (QUESTIONS §20/§21).

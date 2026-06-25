@@ -335,6 +335,38 @@ Crucially, crash recovery is now **faster** than the old ~90s sweeper: with no `
 
 ---
 
+### S7. Converter engine grouping + pass-through skip (2026-06-25) ✅ APPLIED (docs)
+
+**Decision.** Split the single converter into **engine-grouped deployments of one codebase**, and let files needing no engine bypass the converter. Derived from the client's **File Conversion Table** (`docs/File Conversion Table.csv`), which collapses to exactly 3 engines:
+
+| Engine | Formats | Forward (A) | Reverse (B) | Chunk limit |
+|--------|---------|-------------|-------------|-------------|
+| ImageMagick (`image`) | 12 image formats | →PNG | PNG→original | 200 MB |
+| Aspose (`doc`) | pdf, ppt, pptx | →DOCX | DOCX→PDF | 100–200 MB |
+| ffmpeg (`video`) | ~104 audio+video | →MP4/H264/AAC | **none** (delivers as-is) | **6000 MB** |
+| *(no engine)* | 10 pass-through + 5 rename-to-TXT (obj/mtl/tfw/csv/upscsv) | — | — | 50–300 MB |
+
+- **A:** `Convert.Worker` deploys 3× (`CONVERTER_GROUP` env + per-engine image) consuming `files.convert.image` / `.doc` / `.video`; each gets its own `consumer_timeout` + watchdog + HPA + node sizing. **Main reason:** a shared timeout would be pinned to the 6 GB video worst case, leaving a hung sub-second image conversion unreclaimed for minutes; `prefetch=1` + separate queues also kill head-of-line blocking.
+- **B:** `ReverseConverter.Worker` deploys 2× (`image`, `doc`); **no `video`** — every A/V row's Target Format is "No conversion needed", so the heaviest engine never runs on B.
+- **Pass-through/rename (`converter_group=NULL`) skip the converter:** Prepare routes them straight to `files.split` (A); Assembly writes the assembled bytes straight to `target_path` and flips `Pending→Finalized` (B). The rename-to-TXT relabel is transit-naming only (carried in `applied_conversion`), not a converter invocation.
+- **Routing:** A resolves `conversion_rule.converter_group`; B obeys `reverseConverterGroup` carried in the mini-manifest (B holds no conversion config). Shared retry/dead **unchanged** — +3 main queues on A, +2 on B (19 queues total, was 16), 0 new retry/dead.
+- **Rule resolution + snapshot moved Convert→Prepare** — Prepare must resolve `converter_group` to route, and pass-through files skip Convert, so the snapshot (`applied_conversion`/`reverse_conversion`/`file_size_limit_mb`/`converter_group`) now happens once at Prepare (froze even earlier; harmless to the engine workers, which just read it).
+
+**Schema changes.** `conversion_rule.converter_group` (A); `source_file.converter_group` (A, snapshot); `expected_file.reverse_converter_group` (B); mini-manifest gains `reverseConverterGroup`. No new tables. Convert/ReverseConvert `consumer_timeout` becomes a **per-queue** Rabbit policy (not in `phase_config`; `max_retries` stays per-phase).
+
+**Ripple effects (applied in docs).**
+- `ARCHITECTURE.md`: §2 flow note, §3.1 (Prepare + Convert rows), §3.3 (per-group `consumer_timeout` calibration), §3.4 (steps 2–4), §3.6 (mini-manifest `reverseConverterGroup`), §5.1 (Assembly + ReverseConvert rows), §5.5 (reverse routing rewrite), §6.1 (`ConverterGroup` + snapshot-at-Prepare), §6.4 (per-engine scaling + 6 GB note), §9 (repo-layout comments), §10 (#23).
+- `MICROSERVICES.md`: service count (A 9→11, B 6→7), defaults note, Prepare/Convert/Assembly/ReverseConvert rows, Service-to-Queue mapping (A + B), shared retry/dead count (16→19), Recovery & Calibration, `conversion_rule` infra row.
+- `DB-SCHEMA.md`: `conversion_rule.converter_group`, `source_file.converter_group`, `expected_file.reverse_converter_group`, snapshot-at-Prepare, Pattern summary (new engine-routing row), Resolved decisions (snapshot-at-Prepare + new grouping entry).
+- `SUMMARY.md`: pipeline-in-one-breath (A + B), headline choice #16 (snapshot at Prepare) + new #19 (engine grouping), service count, open-questions 2a.
+- `QUESTIONS-TO-CLIENT.md`: new §22 (video 6 GB SLA/sizing + grouping confirmation).
+
+**Diagrams not yet updated** (`.drawio` untouched this pass, per instruction). Follow-up: `architecture-v3.drawio` (Convert → 3 boxes/queues, ReverseConverter → 2, pass-through bypass arrow); `chunk-flow.drawio` (mini-manifest carries `reverseConverterGroup`; Assembly routes to `files.reverse.{group}` or writes through).
+
+**Still TRUE regardless:** per-converter determinism sign-off before go-live (Aspose carve-out, S5) — now scoped to the `doc` engine.
+
+---
+
 ## RabbitMQ review — R-series
 
 Found during RabbitMQ docs alignment check against `ARCHITECTURE.md` and `MICROSERVICES.md`. All resolved in the same pass.

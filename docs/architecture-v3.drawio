@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
   <diagram name="Dintinct Architecture v3" id="dintinct-v3">
-    <mxGraphModel dx="1864" dy="1022" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1747" dy="1249" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -22,26 +22,75 @@
         <mxCell id="e-jc-prep" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="q-jobs-created" target="prepare" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="q-files-convert" value="files.convert" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" parent="netA" vertex="1">
-          <mxGeometry x="165" y="335" width="120" height="35" as="geometry" />
+        <mxCell id="q-fc-image" value="files.convert.image" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netA" vertex="1">
+          <mxGeometry x="15" y="335" width="130" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="e-prep-fc" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="prepare" target="q-files-convert" edge="1">
+        <mxCell id="q-fc-doc" value="files.convert.doc" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netA" vertex="1">
+          <mxGeometry x="155" y="335" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q-fc-video" value="files.convert.video" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netA" vertex="1">
+          <mxGeometry x="295" y="335" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="conv-image" value="Convert (image)&#xa;ImageMagick" style="rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=10;whiteSpace=wrap;" parent="netA" vertex="1">
+          <mxGeometry x="15" y="410" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="conv-doc" value="Convert (doc)&#xa;Aspose" style="rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=10;whiteSpace=wrap;" parent="netA" vertex="1">
+          <mxGeometry x="155" y="410" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="conv-video" value="Convert (video)&#xa;ffmpeg" style="rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=10;whiteSpace=wrap;" parent="netA" vertex="1">
+          <mxGeometry x="295" y="410" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="e-prep-fci" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="prepare" target="q-fc-image" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="convert" value="Convert.Worker" style="rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" parent="netA" vertex="1">
-          <mxGeometry x="165" y="420" width="120" height="35" as="geometry" />
+        <mxCell id="e-prep-fcd" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="prepare" target="q-fc-doc" edge="1">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-fc-conv" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="q-files-convert" target="convert" edge="1">
+        <mxCell id="e-prep-fcv" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="prepare" target="q-fc-video" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-fci-ci" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="q-fc-image" target="conv-image" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-fcd-cd" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="q-fc-doc" target="conv-doc" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-fcv-cv" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="q-fc-video" target="conv-video" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="q-files-split" value="files.split" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;" parent="netA" vertex="1">
-          <mxGeometry x="165" y="505" width="120" height="35" as="geometry" />
+          <mxGeometry x="160" y="550" width="120" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="e-conv-fs" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="convert" target="q-files-split" edge="1">
+        <mxCell id="e-ci-fs" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="netA" source="conv-image" target="q-files-split" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="80" y="480" />
+              <mxPoint x="220" y="480" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-cd-fs" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="netA" source="conv-doc" target="q-files-split" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
+        <mxCell id="e-cv-fs" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="netA" source="conv-video" target="q-files-split" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="360" y="480" />
+              <mxPoint x="220" y="480" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-prep-fs" value="pass-through / rename&#xa;(converter_group=NULL)&#xa;skip Convert" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontColor=light-dark(#000000, #ec8f82);strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="netA" source="prepare" target="q-files-split" edge="1">
+          <mxGeometry x="0.6975" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="267" />
+              <mxPoint x="430" y="568" />
+            </Array>
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
         <mxCell id="split" value="Split.Worker" style="rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" parent="netA" vertex="1">
-          <mxGeometry x="165" y="590" width="120" height="35" as="geometry" />
+          <mxGeometry x="160" y="630" width="120" height="35" as="geometry" />
         </mxCell>
         <mxCell id="e-fs-split" style="edgeStyle=orthogonalEdgeStyle;" parent="netA" source="q-files-split" target="split" edge="1">
           <mxGeometry relative="1" as="geometry" />
@@ -69,8 +118,15 @@
             <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-prepare-proxy" value="job header&#xa;({job_id}.job.json)" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="1" source="prepare" target="proxy" edge="1">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e-prepare-proxy" value="job header&#xa;({job_id}.job.json)" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" parent="1" source="prepare" target="proxy" edge="1">
+          <mxGeometry x="0.4684" y="-20" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="553" y="278" />
+              <mxPoint x="553" y="370" />
+              <mxPoint x="553" y="370" />
+            </Array>
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="netB" value="NETWORK B" style="swimlane;startSize=30;fillColor=#fff4f0;strokeColor=#AE4132;fontStyle=1;fontSize=14;fontColor=#AE4132;" parent="1" vertex="1">
           <mxGeometry x="710" y="10" width="920" height="900" as="geometry" />
@@ -115,7 +171,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="assembly" value="Assembly.Worker&#xa;(consumes: job-headers.received&#xa;file-manifests.received&#xa;file-manifest-errors.received&#xa;chunks.received)" style="rounded=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;" parent="netB" vertex="1">
-          <mxGeometry x="125" y="330" width="200" height="65" as="geometry" />
+          <mxGeometry x="185" y="330" width="200" height="65" as="geometry" />
         </mxCell>
         <mxCell id="e-jh-asm" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="q-job-headers" target="assembly" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -149,23 +205,48 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="q-assembled" value="files.assembled" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netB" vertex="1">
-          <mxGeometry x="145" y="432.5" width="160" height="35" as="geometry" />
+        <mxCell id="q-rev-image" value="files.reverse.image" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netB" vertex="1">
+          <mxGeometry x="185" y="432.5" width="150" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="e-asm-qa" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="assembly" target="q-assembled" edge="1">
+        <mxCell id="q-rev-doc" value="files.reverse.doc" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netB" vertex="1">
+          <mxGeometry x="355" y="432.5" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="rev-image" value="ReverseConverter (image)&#xa;ImageMagick" style="rounded=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;whiteSpace=wrap;" parent="netB" vertex="1">
+          <mxGeometry x="185" y="500" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="rev-doc" value="ReverseConverter (doc)&#xa;Aspose" style="rounded=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;whiteSpace=wrap;" parent="netB" vertex="1">
+          <mxGeometry x="355" y="500" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="e-asm-qri" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="assembly" target="q-rev-image" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="rev-conv" value="ReverseConverter.Worker" style="rounded=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" parent="netB" vertex="1">
-          <mxGeometry x="130" y="500" width="190" height="35" as="geometry" />
+        <mxCell id="e-asm-qrd" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="assembly" target="q-rev-doc" edge="1">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-qa-rc" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="q-assembled" target="rev-conv" edge="1">
+        <mxCell id="e-qri-ri" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="q-rev-image" target="rev-image" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-qrd-rd" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="q-rev-doc" target="rev-doc" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="q-finalized" value="files.finalized" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;" parent="netB" vertex="1">
-          <mxGeometry x="145" y="575" width="160" height="35" as="geometry" />
+          <mxGeometry x="205" y="600" width="160" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="e-rc-qf" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="rev-conv" target="q-finalized" edge="1">
+        <mxCell id="e-ri-qf" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="rev-image" target="q-finalized" edge="1">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rd-qf" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="rev-doc" target="q-finalized" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-asm-qf" value="pass-through&#xa;(reverse_converter_group=NULL)&#xa;Assembly writes to target_path" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontColor=light-dark(#000000, #ec8f82);strokeColor=#000000;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="netB" source="assembly" target="q-finalized" edge="1">
+          <mxGeometry y="10" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="70" y="363" />
+              <mxPoint x="70" y="618" />
+              <mxPoint x="205" y="618" />
+            </Array>
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="reporter" value="Reporter.Worker" style="rounded=0;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" parent="netB" vertex="1">
           <mxGeometry x="220" y="700" width="160" height="35" as="geometry" />
@@ -176,16 +257,14 @@
         <mxCell id="e-err-rep" style="edgeStyle=orthogonalEdgeStyle;" parent="netB" source="q-chunks-error" target="reporter" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="696" y="320" />
-              <mxPoint x="368" y="320" />
+              <mxPoint x="695" y="718" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="e-uns-rep" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="netB" source="q-chunks-unsupported" target="reporter" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="512" y="460" />
-              <mxPoint x="512" y="718" />
+              <mxPoint x="833" y="718" />
             </Array>
           </mxGeometry>
         </mxCell>
