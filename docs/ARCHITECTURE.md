@@ -896,6 +896,15 @@ Each invariant is detailed in its canonical section; this is the audit index.
 - [x] **Early arrivals buffered, not NACK-looped** (§5.3) — `inbox.published=FALSE`; file-manifest handler inline-drains its chunks in one tx; job-header handler drains in bounded batches (`DRAIN_BATCH`, job row committed first → resumes idempotently on redelivery).
 - [x] **Job-level liveness backstops** — Network B `TimeoutSweeper` (§5.7); Network A `files_manifest_written_count` + per-file DLQ-terminal + `TimeoutSweeper-A` (§3.7). Both 30-min SLA; guarantee terminal even for a watchdog-evading hang or a wedged dead-letter target.
 
+### 6.10 Operational job-tracking UI (Network B)
+
+A read-only operational view of the NB pipeline — proxy-header-received → callback — for ops/support. **Distinct from infra-monitoring (§6.3: Prometheus/Grafana, RabbitMQ Management UI, OpenShift console), which it does not replace.** Two pieces:
+
+- **`Dintinct.B.Monitoring.Api`** — ASP.NET Core, read-only against Postgres-B (read-only DB user / read replica, via PgBouncer). No RabbitMQ, no `outbox`, no writes; reuses `Dintinct.B.Domain` + `Infrastructure`. **No schema changes** — every field is an existing column. Endpoints: `GET /jobs?status=&callingSystemId=&from=&to=` (list + `GROUP BY status` counts; progress per job = `finalized_file_count / expected_file_count`) and `GET /jobs/{id}` (the `job` row + its `expected_file` rows + `expected_chunk.received_at` for missing-chunk drill-down).
+- **`web/monitoring/`** — Angular v22 SPA, static build served by nginx (or as the API's static files), fronted by OpenShift OAuth / SSO. **Polls** (5–10s on the open list; no SignalR/push). Job table filtered by status / `callingSystemId` / date + a detail view (per-file status, `failure_reason`, missing chunks, `callback_sent_at`). Stuck-job detection comes free from existing columns: an old `job_header_received_at` still in `Awaiting`, or `expected_chunk.received_at IS NULL`.
+
+**Scope (NB-only).** Visible lifecycle is `Awaiting → Assembling → ReportPending → Done | PartiallyDone | Failed | TimedOut`. The Postgres-A phases (ingestion / prepare / convert / split) are **not** visible. A job that failed on A and never shipped has no B row (a header that fails *in transit* does appear — born `Failed`, Branch ⑤ §5.3). Only jobs inside the retention window (§6.6) are shown — this is a live ops view, not a historical warehouse. A unified A+B view = add the symmetric read-only API on Network A later.
+
 ---
 
 ## 7. What's removed vs. current
@@ -956,6 +965,7 @@ src/
     Dintinct.B.Reporter.Worker/
     Dintinct.B.OutboxRelay/
     Dintinct.B.DlqConsumer/                   # binds *.dead; expected_file Failed (no manifest write on B)
+    Dintinct.B.Monitoring.Api/                # read-only HTTP job-tracking API (Postgres-B read-only); serves web/monitoring (§6.10)
     Dintinct.B.Domain/
     Dintinct.B.FileAssembly/
     Dintinct.B.Infrastructure/
@@ -964,6 +974,8 @@ src/
     Dintinct.Shared.Messaging/                # consumer base: prefetch=1, done-CAS helper, ack-after-commit
     Dintinct.Shared.Storage/
     Dintinct.Shared.Outbox/                   # outbox writer + relay base
+web/
+  monitoring/                                 # Angular v22 SPA — NB operational job tracking; polls Dintinct.B.Monitoring.Api (§6.10)
 deploy/
   openshift/
     network-a/
