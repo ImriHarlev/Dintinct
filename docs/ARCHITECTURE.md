@@ -639,17 +639,25 @@ Reporter handles `files.finalized` normally — increments `finalized_file_count
 
 **Branch ⑦ — JobHeader ERROR sentinel (`{job_id}.job.ERROR.txt`):**
 
+The sentinel filename carries only `job_id` — all the header metadata (including the callback destination `answer_type`/`answer_location`) was in the header that failed to deliver. We still create the `job` row **born terminal in `Failed`**, so the failure is recorded and queryable instead of vanishing as orphaned `inbox` rows:
+
 ```sql
 INSERT INTO inbox(file_path, kind='JobHeaderError', job_id, published=TRUE)
   ON CONFLICT (file_path) DO NOTHING;
--- Audit only. Cannot recover without job metadata.
--- No job row exists, so the TimeoutSweeper never sees this job.
--- This row (and any buffered FileManifest/Chunk/FileManifestError rows for the
--- same job) are reaped by the age-based inbox-cleanup cron (§6.6).
+-- Create the job row directly terminal. Only job_id is known; all other columns are
+-- nullable and stay NULL (expected_file_count NULL → completion gate never fires, which
+-- is correct — the job is already terminal). ON CONFLICT guards the (contract-impossible)
+-- race where a real header also lands: whichever committed first wins.
+INSERT INTO job(id, status='Failed', updated_at=now())
+  ON CONFLICT (id) DO NOTHING;
 COMMIT; ack;
 ```
 
-No outbox row. Recovery is not possible without job metadata. Because no `job` row is ever created, the TimeoutSweeper (which scans `job` rows only) cannot touch these orphaned `inbox` rows — they are cleaned solely by the age-based inbox-cleanup cron in §6.6.
+No outbox row. The job is now visible as `Failed` (queryable, alerted via the §6.3 failed-job metric) and is excluded from both sweepers, which scan only non-terminal jobs (`TimeoutSweeper`: `status IN ('Awaiting','Assembling')`, §5.7). It converges via the §6.6 terminal-job cleanup like any other terminal job.
+
+Because the `job` row now exists, later-arriving file-manifests/chunks for this `job_id` take the *job-exists* branches (③/⑤) instead of buffering (④/①); Assembly's terminal short-circuit (§5.7) and the `WHERE status='Awaiting'` upsert guard (§5.4) make it ack-and-drop them — the same way it handles late arrivals for a `TimedOut` job — so nothing lands in `target_path` after the failure.
+
+> **No callback is sent for this case.** `IAnswerDispatcher` needs `answer_type`/`answer_location`, which lived in the lost header — so for this *one* failure mode the calling system is not notified; the `Failed` job row is the audit/alert surface instead. Recovering the callback would require Network A re-shipping the header. Whether that is required is a client decision — see [`QUESTIONS-TO-CLIENT.md`](QUESTIONS-TO-CLIENT.md). Any `FileManifest`/`Chunk` bytes already buffered in `inbox` before the row existed are reaped by the age-based inbox-cleanup cron (§6.6); their chunk files fall to the proxy's days-old self-clean.
 
 ---
 
@@ -764,7 +772,7 @@ Same shape as NetworkA §3.5:
 | **Unknown** | Anything else | Transient by default. |
 
 - After `max_retries=5` → DLQ consumer flips `expected_file.status='Failed'`.
-- **Job marked `Failed` ONLY by:** Reporter (all `expected_file` Failed), TimeoutSweeper (SLA exceeded → `TimedOut`), or Reporter resolving `JobStatus='Timeout'`. Workers NEVER mark `job.status='Failed'` directly.
+- **Job marked `Failed` by:** Reporter (all `expected_file` Failed), TimeoutSweeper (SLA exceeded → `TimedOut`), Reporter resolving `JobStatus='Timeout'`, or **ProxyListener Branch ⑦** — the one case where the `job` row is *born* terminal `Failed`, because its header (and all metadata) failed to deliver (§5.3). Workers NEVER move a *non-terminal* `job` to `Failed` mid-pipeline.
 
 See [`worker-exception-handling.drawio`](worker-exception-handling.drawio) for the decision tree.
 
@@ -1001,7 +1009,7 @@ Resolved in this revision (recorded for traceability):
 | 8 | Timeout SLA | 30 minutes from `coalesce(job_header_received_at, created_at)`. |
 | 9 | End-of-job manifest | Replaced by job header (Prepare) + per-file mini-manifests (Split). NB can start assembling each file immediately on mini-manifest arrival; no global wait. |
 | 10 | Manifest write crash safety | Write-before-commit sequencing: mini-manifest written to disk BEFORE committing the done-CAS terminal status. Broker redelivery → retry → re-write (idempotent) → commit. The `source_file.status` done-CAS is itself the exactly-once counter gate (no `manifest_written` flag). |
-| 11 | NB job row creation trigger | Job header arrival (via Proxy) — `job_header_received_at` replaces `manifest_received_at`. `expected_file_count` set from job header's `totalSourceFiles`. |
+| 11 | NB job row creation trigger | Job header arrival (via Proxy) — `job_header_received_at` replaces `manifest_received_at`. `expected_file_count` set from job header's `totalSourceFiles`. **Exception:** a job-header ERROR sentinel (Branch ⑦, §5.3) also creates the row, born terminal `Failed`, with metadata NULL and no callback. |
 | 12 | ProxyListener branch count | 7 branches (was 3): chunk-before-file-manifest, job-header, file-manifest (job exists), file-manifest (no job), chunk-after-file-manifest, file-manifest ERROR sentinel, job-header ERROR sentinel. |
 | 13 | Proxy-outbox safe-write strategy | `.tmp` + rename everywhere (the proxy ignores `.tmp` files). Staging-subdir + mv workaround reverted; partial-file-pickup risk closed (§4.1/§4.2). |
 | 14 | Proxy→B truncation guard | Proxy publishes its Rabbit message only after the file finishes moving into the proxy delivery dir; NB acts on the message, never a filesystem-watch event, so it never sees a mid-write file. Two-stat stability check kept as belt-and-suspenders (§4/§5.9). |
