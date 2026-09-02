@@ -1,20 +1,12 @@
 using NetworkA.DirectoryListener.Service.Options;
 using NetworkA.DirectoryListener.Service.Services;
-using Serilog;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
-using ZiggyCreatures.Caching.Fusion;
-
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithProperty("Service", "NetworkA.DirectoryListener.Service")
-    .WriteTo.Console()
-    .WithFileLogging("NetworkA.DirectoryListener.Service")
-    .CreateLogger();
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog();
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<DirectoryListenerOptions>(builder.Configuration.GetSection(DirectoryListenerOptions.SectionName));

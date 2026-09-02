@@ -1,22 +1,14 @@
 using NetworkB.Activities.Reporting.Activities;
 using NetworkB.Activities.Reporting.Interfaces;
 using NetworkB.Activities.Reporting.Services;
-using Serilog;
-using Serilog.Formatting.Compact;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithProperty("Service", "NetworkB.Activities.Reporting")
-    .WriteTo.Console()
-    .WithFileLogging("NetworkB.Activities.Reporting")
-    .CreateLogger();
-
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog();
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
@@ -39,12 +31,10 @@ builder.Services
 
 var host = builder.Build();
 
-// Log Temporal worker registration (FR-021, SC-002)
 using (var scope = host.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     StartupValidator.LogTemporalWorkerRegistered("NetworkB.Activities.Reporting", "callback-dispatch-tasks", logger);
-    // RabbitMQ connectivity confirmed when DispatchAsync is called during reporting
 }
 
 host.Run();

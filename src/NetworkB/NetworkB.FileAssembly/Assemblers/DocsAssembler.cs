@@ -8,7 +8,9 @@ namespace NetworkB.FileAssembly.Assemblers;
 public sealed class DocsAssembler : IFileAssembler
 {
     private static readonly Lock LicenseLock = new();
-    private static bool _licenseConfigured;
+
+    // Fixes the double-checked lock: without volatile, the JIT can reorder the outer read, making the guard invisible to other threads
+    private static volatile bool _licenseConfigured;
     private readonly AsposeOptions _asposeOptions;
     private readonly ILogger<DocsAssembler> _logger;
 
@@ -33,18 +35,33 @@ public sealed class DocsAssembler : IFileAssembler
             return;
         }
 
-        using var firstStream = new MemoryStream(request.Chunks[0].Content, writable: false);
-        var assembledDocument = new Document(firstStream);
-
-        for (var i = 1; i < request.Chunks.Count; i++)
+        try
         {
-            using var chunkStream = new MemoryStream(request.Chunks[i].Content, writable: false);
-            var chunkDocument = new Document(chunkStream);
-            assembledDocument.AppendDocument(chunkDocument, ImportFormatMode.KeepSourceFormatting);
-        }
+            using var firstStream = new MemoryStream(request.Chunks[0].Content, writable: false);
+            var assembledDocument = new Document(firstStream);
 
-        await using var outputStream = File.Create(request.OutputPath);
-        assembledDocument.Save(outputStream, SaveFormat.Docx);
+            for (var i = 1; i < request.Chunks.Count; i++)
+            {
+                using var chunkStream = new MemoryStream(request.Chunks[i].Content, writable: false);
+                var chunkDocument = new Document(chunkStream);
+                assembledDocument.AppendDocument(chunkDocument, ImportFormatMode.KeepSourceFormatting);
+            }
+
+            await using var outputStream = File.Create(request.OutputPath);
+            assembledDocument.Save(outputStream, SaveFormat.Docx);
+        }
+        catch (UnsupportedFileFormatException ex)
+        {
+            _logger.LogError(ex, "Aspose.Words: unrecognised DOCX chunk data assembling '{OutputPath}'",
+                request.OutputPath);
+            throw;
+        }
+        catch (FileCorruptedException ex)
+        {
+            _logger.LogError(ex, "Aspose.Words: corrupt DOCX chunk assembling '{OutputPath}'",
+                request.OutputPath);
+            throw;
+        }
     }
 
     private void EnsureLicenseConfigured()

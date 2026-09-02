@@ -1,19 +1,14 @@
 using NetworkA.Decomposition.Workflow.Activities;
 using NetworkA.Decomposition.Workflow.Workflows;
-using Serilog;
+using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithProperty("Service", "NetworkA.Decomposition.Workflow")
-    .WriteTo.Console()
-    .WithFileLogging("NetworkA.Decomposition.Workflow")
-    .CreateLogger();
-
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog();
+builder.AddSharedConfiguration();
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<WorkflowActivityConfigOptions>(builder.Configuration.GetSection("WorkflowActivityConfig"));

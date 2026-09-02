@@ -14,6 +14,7 @@ public class RepackAndFinalizeActivities
         _logger = logger;
     }
 
+
     [Activity]
     public Task RepackAndFinalizeAsync(AssemblyBlueprint blueprint)
     {
@@ -50,7 +51,8 @@ public class RepackAndFinalizeActivities
             ZipFile.CreateFromDirectory(assemblyDir, zipPath);
             _logger.LogInformation("Repacked ZIP archive: {ZipPath}", zipPath);
 
-            try { Directory.Delete(assemblyDir, recursive: true); } catch { /* best-effort cleanup */ }
+            try { Directory.Delete(assemblyDir, recursive: true); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Best-effort cleanup failed for assembly dir {AssemblyDir}", assemblyDir); }
         }
         else
         {
@@ -68,7 +70,8 @@ public class RepackAndFinalizeActivities
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 File.Move(assembled, dest, overwrite: true);
             }
-            try { Directory.Delete(assemblyDir, recursive: true); } catch { /* best-effort cleanup */ }
+            try { Directory.Delete(assemblyDir, recursive: true); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Best-effort cleanup failed for assembly dir {AssemblyDir}", assemblyDir); }
         }
 
         _logger.LogInformation("Repack and finalize complete for job {JobId}", blueprint.Id);

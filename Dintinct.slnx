@@ -1,32 +1,33 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/NetworkA/">
-    <Project Path="src/NetworkA/NetworkA.Decomposition.Workflow/NetworkA.Decomposition.Workflow.csproj" />
-    <Project Path="src/NetworkA/NetworkA.FileProcessing/NetworkA.FileProcessing.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkA/NetworkA.Decomposition.Workflow/NetworkA.Decomposition.Workflow.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkA/NetworkA.FileProcessing/NetworkA.FileProcessing.csproj" />
   </Folder>
   <Folder Name="/src/NetworkA/Activities/">
-    <Project Path="src/NetworkA/Activities/NetworkA.Activities.HeavyProcessing/NetworkA.Activities.HeavyProcessing.csproj" />
-    <Project Path="src/NetworkA/Activities/NetworkA.Activities.Manifest/NetworkA.Activities.Manifest.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkA/Activities/NetworkA.Activities.HeavyProcessing/NetworkA.Activities.HeavyProcessing.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkA/Activities/NetworkA.Activities.Manifest/NetworkA.Activities.Manifest.csproj" />
   </Folder>
   <Folder Name="/src/NetworkA/Listeners/">
-    <Project Path="src/NetworkA/NetworkA.DirectoryListener.Service/NetworkA.DirectoryListener.Service.csproj" />
-    <Project Path="src/NetworkA/NetworkA.Ingestion.API/NetworkA.Ingestion.API.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkA/NetworkA.DirectoryListener.Service/NetworkA.DirectoryListener.Service.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkA/NetworkA.Ingestion.API/NetworkA.Ingestion.API.csproj" />
   </Folder>
   <Folder Name="/src/NetworkB/">
-    <Project Path="src/NetworkB/NetworkB.Assembly.Workflow/NetworkB.Assembly.Workflow.csproj" />
-    <Project Path="src/NetworkB/NetworkB.FileAssembly/NetworkB.FileAssembly.csproj" />
-    <Project Path="src/NetworkB/NetworkB.ProxyListener.Service/NetworkB.ProxyListener.Service.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkB/NetworkB.Assembly.Workflow/NetworkB.Assembly.Workflow.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkB/NetworkB.FileAssembly/NetworkB.FileAssembly.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkB/NetworkB.ProxyListener.Service/NetworkB.ProxyListener.Service.csproj" />
   </Folder>
   <Folder Name="/src/NetworkB/Activities/">
-    <Project Path="src/NetworkB/Activities/NetworkB.Activities.HeavyAssembly/NetworkB.Activities.HeavyAssembly.csproj" />
-    <Project Path="src/NetworkB/Activities/NetworkB.Activities.ManifestState/NetworkB.Activities.ManifestState.csproj" />
-    <Project Path="src/NetworkB/Activities/NetworkB.Activities.Reporting/NetworkB.Activities.Reporting.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkB/Activities/NetworkB.Activities.HeavyAssembly/NetworkB.Activities.HeavyAssembly.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkB/Activities/NetworkB.Activities.ManifestState/NetworkB.Activities.ManifestState.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/NetworkB/Activities/NetworkB.Activities.Reporting/NetworkB.Activities.Reporting.csproj" />
   </Folder>
   <Folder Name="/src/Shared/">
-    <Project Path="src/Shared/Shared.Contracts/Shared.Contracts.csproj" />
-    <Project Path="src/Shared/Shared.Infrastructure/Shared.Infrastructure.csproj" />
+    <File Path="src/Shared/logging.json" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/Shared/Shared.Contracts/Shared.Contracts.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/Shared/Shared.Infrastructure/Shared.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/Proxy/">
-    <Project Path="src/Proxy/Proxy.MockService/Proxy.MockService.csproj" />
+    <Project Path="../../../../../../../../Programing/Projects/Dintinct/src/Proxy/Proxy.MockService/Proxy.MockService.csproj" />
   </Folder>
 </Solution>

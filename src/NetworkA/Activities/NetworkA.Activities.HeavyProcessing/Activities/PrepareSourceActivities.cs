@@ -31,7 +31,16 @@ public class PrepareSourceActivities
             originalPackageName = Path.GetFileName(sourcePath);
             workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{jobId}");
             Directory.CreateDirectory(workDir);
-            ZipFile.ExtractToDirectory(sourcePath, workDir, overwriteFiles: true);
+            try
+            {
+                ZipFile.ExtractToDirectory(sourcePath, workDir, overwriteFiles: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to extract ZIP {SourcePath} to {WorkDir}", sourcePath, workDir);
+                try { Directory.Delete(workDir, recursive: true); } catch { /* best-effort */ }
+                throw;
+            }
             _logger.LogInformation("Extracted ZIP to temp dir {WorkDir}", workDir);
         }
         else if (Directory.Exists(sourcePath))
@@ -39,7 +48,16 @@ public class PrepareSourceActivities
             packageType = "folder";
             originalPackageName = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar));
             workDir = Path.Combine(Path.GetTempPath(), $"dintinct_{jobId}");
-            CopyDirectory(sourcePath, workDir);
+            try
+            {
+                CopyDirectory(sourcePath, workDir);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to copy folder {SourcePath} to {WorkDir}", sourcePath, workDir);
+                try { Directory.Delete(workDir, recursive: true); } catch { /* best-effort */ }
+                throw;
+            }
             _logger.LogInformation("Copied folder to temp dir {WorkDir}", workDir);
         }
         else if (File.Exists(sourcePath))
@@ -62,7 +80,16 @@ public class PrepareSourceActivities
         }
 
         var nestedArchives = new List<string>();
-        await ExpandNestedArchivesAsync(workDir, workDir, nestedArchives);
+        try
+        {
+            await ExpandNestedArchivesAsync(workDir, workDir, nestedArchives);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to expand nested archives in {WorkDir}", workDir);
+            try { Directory.Delete(workDir, recursive: true); } catch { /* best-effort */ }
+            throw;
+        }
 
         var sourceFiles = Directory
             .EnumerateFiles(workDir, "*", SearchOption.AllDirectories)

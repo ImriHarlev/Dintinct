@@ -11,7 +11,7 @@ public sealed class DefaultFileSplitter : IFileSplitter
     {
         var fileBytes = await File.ReadAllBytesAsync(request.SourceFilePath);
         var chunkSizeBytes = request.FileSizeLimitMb.HasValue
-            ? request.FileSizeLimitMb.Value * 1024 * 1024
+            ? (long)request.FileSizeLimitMb.Value * 1024 * 1024
             : fileBytes.Length;
 
         var chunkCount = (int)Math.Ceiling((double)fileBytes.Length / chunkSizeBytes);
@@ -23,9 +23,9 @@ public sealed class DefaultFileSplitter : IFileSplitter
         var chunks = new List<byte[]>(chunkCount);
         for (var i = 0; i < chunkCount; i++)
         {
-            var offset = i * chunkSizeBytes;
-            var length = Math.Min(chunkSizeBytes, fileBytes.Length - offset);
-            chunks.Add(fileBytes.AsSpan(offset, length).ToArray());
+            var offset = (long)i * chunkSizeBytes;
+            var length = (int)Math.Min(chunkSizeBytes, fileBytes.Length - offset);
+            chunks.Add(fileBytes.AsSpan((int)offset, length).ToArray());
         }
 
         return chunks;

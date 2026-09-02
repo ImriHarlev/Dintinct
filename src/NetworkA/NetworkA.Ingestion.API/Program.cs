@@ -2,7 +2,6 @@ using FluentValidation;
 using NetworkA.Ingestion.API.Interfaces;
 using NetworkA.Ingestion.API.Services;
 using NetworkA.Ingestion.API.Validators;
-using Serilog;
 using Shared.Contracts.Payloads;
 using Shared.Infrastructure.Extensions;
 using Shared.Infrastructure.Logging;
@@ -10,12 +9,7 @@ using Shared.Infrastructure.Options;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Host.UseSerilog((context, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.WithProperty("Service", "NetworkA.Ingestion.API")
-    .WriteTo.Console()
-    .WithFileLogging("NetworkA.Ingestion.API"));
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.AddTemporalClient();

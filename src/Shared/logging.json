@@ -1,0 +1,48 @@
+{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft": "Warning",
+        "System": "Warning"
+      }
+    },
+    "WriteTo": [
+      {
+        "Name": "Console",
+        "Args": {
+          "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] [{Service}] {Message:lj}{NewLine}{Exception}"
+        }
+      },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "%DINTINCT_ROOT%/logs/%SERVICE_NAME%-.log",
+          "rollingInterval": "Day",
+          "retainedFileCountLimit": 7,
+          "fileSizeLimitBytes": 104857600,
+          "rollOnFileSizeLimit": true,
+          "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] [{Service}] {Message:lj}{NewLine}{Exception}"
+        }
+      },
+    ]
+  },
+  "Elasticsearch": {
+    "Enabled": false,
+    "Uri": "http://localhost:9200",
+    "IndexFormat": "dintinct-logs-{0:yyyy.MM}"
+  },
+  "RegisteredServices": [
+    "NetworkA.Activities.HeavyProcessing",
+    "NetworkA.Activities.Manifest",
+    "NetworkA.Decomposition.Workflow",
+    "NetworkA.DirectoryListener.Service",
+    "NetworkA.Ingestion.API",
+    "NetworkB.Activities.HeavyAssembly",
+    "NetworkB.Activities.ManifestState",
+    "NetworkB.Activities.Reporting",
+    "NetworkB.Assembly.Workflow",
+    "NetworkB.ProxyListener.Service",
+    "Proxy.MockService"
+  ]
+}

@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$imageFolder = "C:\network-a\incoming\videoAudio"
+$imageFolder = "C:\network-a\incoming\mixed"
 $targetPath = "\network-b\output"
 $responsePath = "\network-b\responses"
 
@@ -19,7 +19,7 @@ Write-Host "================================================`n" -ForegroundColor
 # Loop through each file
 foreach ($file in $files) {
 	$externalId = "externalId-$([guid]::NewGuid().ToString().Substring(0,8))"
-	$sourcePackage = "\network-a\incoming\Image\$($file.Name)"
+	$sourcePackage = "\network-a\incoming\mixed\$($file.Name)"
 
 	Write-Host "--- Processing: $($file.Name) (Job: $externalId) ---" -ForegroundColor Green
 

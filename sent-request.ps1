@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 # Configuration
 $externalId = "externalId-$([guid]::NewGuid().ToString().Substring(0,8))"
-$sourcePackage = "\network-a\incoming\videoAudio\sample-caf-files-sample1.caf"
+$sourcePackage = "\network-a\incoming\mixed"
 $targetPath = "\network-b\output"
 $responsePath = "\network-b\responses"
 
