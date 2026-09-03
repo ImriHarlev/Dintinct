@@ -1,17 +1,11 @@
 using NetworkA.Activities.Manifest.Activities;
-using Serilog;
-using Serilog.Formatting.Compact;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithProperty("Service", "NetworkA.Activities.Manifest")
-    .WriteTo.Console()
-    .CreateLogger();
-
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog();
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
@@ -29,7 +23,6 @@ builder.Services
 
 var host = builder.Build();
 
-// Log Temporal worker registration (FR-021, SC-002)
 using (var scope = host.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();

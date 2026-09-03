@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NetworkA.DirectoryListener.Service.Options;
 using ZiggyCreatures.Caching.Fusion;
@@ -79,6 +80,7 @@ public class DirectoryListenerBackgroundService : BackgroundService
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
+                    _logger.LogDebug("Directory poll interrupted — service stopping");
                     break;
                 }
                 catch (Exception ex)
@@ -89,6 +91,7 @@ public class DirectoryListenerBackgroundService : BackgroundService
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            _logger.LogDebug("Directory listener ExecuteAsync cancelled via stopping token");
         }
 
         _queue.Writer.TryComplete();
@@ -99,6 +102,7 @@ public class DirectoryListenerBackgroundService : BackgroundService
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            _logger.LogDebug("Consumer tasks cancelled during directory listener shutdown");
         }
 
         _logger.LogInformation("Directory listener stopped");
@@ -206,6 +210,7 @@ public class DirectoryListenerBackgroundService : BackgroundService
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                _logger.LogDebug("Queue consumer stopping due to cancellation");
                 break;
             }
             catch (Exception ex)
@@ -276,7 +281,7 @@ public class DirectoryListenerBackgroundService : BackgroundService
         return null;
     }
 
-    private static FileStamp? GetStamp(string filePath)
+    private FileStamp? GetStamp(string filePath)
     {
         try
         {
@@ -286,8 +291,14 @@ public class DirectoryListenerBackgroundService : BackgroundService
 
             return new FileStamp(info.Length, info.LastWriteTimeUtc);
         }
-        catch
+        catch (IOException ex)
         {
+            _logger.LogDebug(ex, "Could not read file stamp for {FilePath} — file may be locked", filePath);
+            return null;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Access denied reading file stamp for {FilePath}", filePath);
             return null;
         }
     }

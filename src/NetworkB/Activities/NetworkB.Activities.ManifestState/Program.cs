@@ -1,16 +1,11 @@
 using NetworkB.Activities.ManifestState.Activities;
-using Serilog;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 using Shared.Infrastructure.Startup;
 using Temporalio.Extensions.Hosting;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithProperty("Service", "NetworkB.Activities.ManifestState")
-    .WriteTo.Console()
-    .CreateLogger();
-
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog();
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<TemporalOptions>(builder.Configuration.GetSection("Temporal"));
 

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NetworkB.ProxyListener.Service.Options;
 using RabbitMQ.Client;
@@ -36,40 +37,48 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var factory = new ConnectionFactory { Uri = new Uri(_rabbitMqOptions.AmqpUri) };
-        _connection = await factory.CreateConnectionAsync(cancellationToken);
-        _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        try
+        {
+            var factory = new ConnectionFactory { Uri = new Uri(_rabbitMqOptions.AmqpUri) };
+            _connection = await factory.CreateConnectionAsync(cancellationToken);
+            _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-        await _channel.ExchangeDeclareAsync(
-            _listenerOptions.ProxyExchange,
-            ExchangeType.Direct,
-            durable: true,
-            cancellationToken: cancellationToken);
+            await _channel.ExchangeDeclareAsync(
+                _listenerOptions.ProxyExchange,
+                ExchangeType.Direct,
+                durable: true,
+                cancellationToken: cancellationToken);
 
-        await _channel.QueueDeclareAsync(
-            _listenerOptions.ProxyQueue,
-            durable: true,
-            exclusive: false,
-            autoDelete: false,
-            cancellationToken: cancellationToken);
+            await _channel.QueueDeclareAsync(
+                _listenerOptions.ProxyQueue,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                cancellationToken: cancellationToken);
 
-        await _channel.QueueBindAsync(
-            _listenerOptions.ProxyQueue,
-            _listenerOptions.ProxyExchange,
-            routingKey: "file.arrived",
-            cancellationToken: cancellationToken);
+            await _channel.QueueBindAsync(
+                _listenerOptions.ProxyQueue,
+                _listenerOptions.ProxyExchange,
+                routingKey: "file.arrived",
+                cancellationToken: cancellationToken);
 
-        var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.ReceivedAsync += HandleMessageAsync;
+            var consumer = new AsyncEventingBasicConsumer(_channel);
+            consumer.ReceivedAsync += HandleMessageAsync;
 
-        await _channel.BasicConsumeAsync(
-            _listenerOptions.ProxyQueue,
-            autoAck: false,
-            consumer: consumer,
-            cancellationToken: cancellationToken);
+            await _channel.BasicConsumeAsync(
+                _listenerOptions.ProxyQueue,
+                autoAck: false,
+                consumer: consumer,
+                cancellationToken: cancellationToken);
 
-        _logger.LogInformation("NetworkB.ProxyListener.Service: RabbitMQ connected successfully");
-        _logger.LogInformation("NetworkB.ProxyListener.Service: Temporal worker registered on queue assembly-workflow");
+            _logger.LogInformation("NetworkB.ProxyListener.Service: RabbitMQ connected successfully");
+            _logger.LogInformation("NetworkB.ProxyListener.Service: Temporal worker registered on queue assembly-workflow");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "Failed to connect to RabbitMQ at {AmqpUri}. Service will not consume messages.", _rabbitMqOptions.AmqpUri);
+            throw;
+        }
     }
 
     private async Task HandleMessageAsync(object sender, BasicDeliverEventArgs ea)
@@ -147,10 +156,17 @@ public class ProxyEventConsumer : IHostedService, IAsyncDisposable
 
             await _channel!.BasicAckAsync(ea.DeliveryTag, multiple: false);
         }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Proxy event processing cancelled for delivery tag {DeliveryTag} — requeueing", ea.DeliveryTag);
+            if (_channel is not null)
+                await _channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing proxy event");
-            await _channel!.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false);
+            _logger.LogError(ex, "Error processing proxy event for delivery tag {DeliveryTag} — discarding message", ea.DeliveryTag);
+            if (_channel is not null)
+                await _channel!.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false);
         }
     }
 

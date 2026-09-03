@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      Disable MSBuild workload manifest imports. None of the projects in this solution
+      use workload-based features (MAUI, Blazor WASM, etc.), so this import is unnecessary.
+      Prevents build failures caused by missing WorkloadManifest.targets files after
+      dotnet workload update updates the manifest index without downloading all content.
+    -->
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+
+  <!--
+    Solution-wide transitive dependency overrides.
+    Forces every project in this solution to resolve the listed packages at the
+    specified (patched) version, overriding lower vulnerable transitive resolutions.
+  -->
+  <ItemGroup>
+    <!-- GHSA-73j8-2gch-69rq: Microsoft.Bcl.Memory < 9.0.5 has a high-severity vulnerability. -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.11" />
+  </ItemGroup>
+</Project>

@@ -1,15 +1,10 @@
 using Proxy.MockService.Options;
 using Proxy.MockService.Services;
-using Serilog;
+using Shared.Infrastructure.Logging;
 using Shared.Infrastructure.Options;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithProperty("Service", "Proxy.MockService")
-    .WriteTo.Console()
-    .CreateLogger();
-
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddSerilog();
+builder.AddSerilogFromConfiguration();
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.Configure<ProxyMockOptions>(builder.Configuration.GetSection("ProxyMock"));
